@@ -162,11 +162,13 @@ async def separate(file: UploadFile = File(...)):
 # --- youtube search + download + separate ---------------------------------
 
 @app.get("/api/search")
-async def search(q: str, limit: int = 10) -> dict:
+async def search(q: str, limit: int = 10, offset: int = 0) -> dict:
     q = q.strip()
     if not q:
         raise HTTPException(400, "empty query")
     limit = max(1, min(20, limit))
+    offset = max(0, min(100, offset))
+    total = offset + limit
 
     def do_search() -> dict:
         from yt_dlp import YoutubeDL
@@ -175,17 +177,18 @@ async def search(q: str, limit: int = 10) -> dict:
             "no_warnings": True,
             "skip_download": True,
             "extract_flat": "in_playlist",
-            "default_search": f"ytsearch{limit}",
+            "default_search": f"ytsearch{total}",
         }
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(q, download=False) or {}
 
     info = await asyncio.get_event_loop().run_in_executor(None, do_search)
+    entries = [e for e in info.get("entries", []) if e]
+    has_more = len(entries) >= total
+    page = entries[offset:total]
 
     items = []
-    for entry in info.get("entries", []):
-        if not entry:
-            continue
+    for entry in page:
         vid = entry.get("id")
         if not vid:
             continue
@@ -197,7 +200,7 @@ async def search(q: str, limit: int = 10) -> dict:
             "thumbnail": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg",
             "url": f"https://www.youtube.com/watch?v={vid}",
         })
-    return {"results": items}
+    return {"results": items, "has_more": has_more, "offset": offset}
 
 
 class YoutubeJob(BaseModel):

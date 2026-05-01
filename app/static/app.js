@@ -20,12 +20,17 @@ const stemList = $('stems');
 const resetBtn = $('reset');
 const library = $('library');
 const libraryList = $('library-list');
-const searchZone = $('search-zone');
+const searchDialog = $('search-dialog');
+const openSearchBtn = $('open-search');
+const dialogCloseBtn = $('dialog-close');
+const clearSearchBtn = $('clear-search');
 const searchForm = $('search-form');
 const searchInput = $('q');
 const searchBtn = $('search-btn');
 const searchResults = $('search-results');
 const searchEmpty = $('search-empty');
+const searchHint = $('search-hint');
+const loadMoreBtn = $('load-more');
 
 let ctx = null;
 let buffers = {};
@@ -74,7 +79,7 @@ drop.addEventListener('drop', e => {
 // --- upload + separate -----------------------------------------------------
 
 async function upload(file) {
-  show(statusEl); hide(drop); hide(searchZone); hide(player);
+  show(statusEl); hide(drop); hide(player);
   setStatus({ stage: 'uploading', percent: 0, message: file.name });
   await runSeparation(() => fetch('/api/separate', { method: 'POST', body: formData('file', file) }));
 }
@@ -157,7 +162,7 @@ function fail(msg) {
   statusPercent.textContent = '';
   statusBar.style.width = '0%';
   statusMessage.textContent = msg;
-  setTimeout(() => { hide(statusEl); show(drop); show(searchZone); }, 4000);
+  setTimeout(() => { hide(statusEl); show(drop); }, 4000);
 }
 
 // --- player ----------------------------------------------------------------
@@ -349,7 +354,7 @@ resetBtn.addEventListener('click', () => {
   buffers = {}; gains = {}; sources = {}; muted = {}; volumes = {};
   duration = 0; startOffset = 0;
   fileInput.value = '';
-  hide(player); show(drop); show(searchZone);
+  hide(player); show(drop);
 });
 
 function show(el) { el.classList.remove('hidden'); }
@@ -421,7 +426,7 @@ libraryList.addEventListener('click', async e => {
 
 async function loadFromLibrary(item) {
   pause();
-  show(statusEl); hide(drop); hide(searchZone); hide(player);
+  show(statusEl); hide(drop); hide(player);
   setStatus({ stage: 'loading', percent: 100, message: item.name });
   const data = {
     job_id: item.job_id,
@@ -471,39 +476,125 @@ themeToggle.addEventListener('click', () => {
 
 paintThemeIcon();
 
-// --- youtube search --------------------------------------------------------
+// --- youtube search dialog -------------------------------------------------
 
+const SEARCH_PAGE_SIZE = 10;
+let searchState = { q: '', offset: 0, hasMore: false };
 let searching = false;
+
+function openSearchDialog() {
+  searchDialog.showModal();
+  setTimeout(() => searchInput.focus(), 0);
+}
+
+function closeSearchDialog() {
+  searchDialog.close();
+}
+
+function resetSearch() {
+  searchState = { q: '', offset: 0, hasMore: false };
+  searchInput.value = '';
+  searchResults.innerHTML = '';
+  hide(searchEmpty);
+  hide(loadMoreBtn);
+  show(searchHint);
+  toggleClearVisibility();
+}
+
+function toggleClearVisibility() {
+  if (searchInput.value.length > 0) show(clearSearchBtn);
+  else hide(clearSearchBtn);
+}
+
+openSearchBtn.addEventListener('click', openSearchDialog);
+dialogCloseBtn.addEventListener('click', closeSearchDialog);
+
+searchDialog.addEventListener('close', resetSearch);
+
+searchDialog.addEventListener('click', e => {
+  // close when clicking on the backdrop (the dialog element itself)
+  if (e.target === searchDialog) closeSearchDialog();
+});
+
+searchInput.addEventListener('input', toggleClearVisibility);
+
+clearSearchBtn.addEventListener('click', () => {
+  searchState = { q: '', offset: 0, hasMore: false };
+  searchInput.value = '';
+  searchResults.innerHTML = '';
+  hide(searchEmpty);
+  hide(loadMoreBtn);
+  show(searchHint);
+  toggleClearVisibility();
+  searchInput.focus();
+});
 
 searchForm.addEventListener('submit', async e => {
   e.preventDefault();
   const q = searchInput.value.trim();
   if (!q || searching) return;
-  searching = true;
-  searchBtn.disabled = true;
-  searchBtn.classList.add('opacity-60', 'cursor-wait');
+  searchState = { q, offset: 0, hasMore: false };
+  searchResults.innerHTML = '';
   hide(searchEmpty);
-  searchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
-  show(searchResults);
-
-  try {
-    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=10`);
-    if (!r.ok) throw new Error(await r.text());
-    const data = await r.json();
-    renderResults(data.results || []);
-  } catch (err) {
-    searchResults.innerHTML = `<li class="text-sm text-red-400 px-2 py-2">search failed: ${escapeHtml(String(err).slice(0, 200))}</li>`;
-  } finally {
-    searching = false;
-    searchBtn.disabled = false;
-    searchBtn.classList.remove('opacity-60', 'cursor-wait');
-  }
+  hide(loadMoreBtn);
+  hide(searchHint);
+  await fetchSearchPage(true);
 });
 
-function renderResults(results) {
-  searchResults.innerHTML = '';
-  if (!results.length) {
-    hide(searchResults);
+loadMoreBtn.addEventListener('click', () => fetchSearchPage(false));
+
+async function fetchSearchPage(isFirstPage) {
+  if (searching || !searchState.q) return;
+  searching = true;
+  setSearchBusy(true);
+
+  let placeholder;
+  if (isFirstPage) {
+    searchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
+  } else {
+    placeholder = document.createElement('li');
+    placeholder.className = 'text-sm text-stone-500 italic px-2 py-2';
+    placeholder.textContent = 'loading more…';
+    searchResults.appendChild(placeholder);
+  }
+
+  try {
+    const url = `/api/search?q=${encodeURIComponent(searchState.q)}&limit=${SEARCH_PAGE_SIZE}&offset=${searchState.offset}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (placeholder) placeholder.remove();
+    appendResults(data.results || [], isFirstPage);
+    searchState.offset += (data.results || []).length;
+    searchState.hasMore = !!data.has_more;
+    if (searchState.hasMore) show(loadMoreBtn); else hide(loadMoreBtn);
+  } catch (err) {
+    if (placeholder) placeholder.remove();
+    if (isFirstPage) {
+      searchResults.innerHTML = `<li class="text-sm text-red-400 px-2 py-2">search failed: ${escapeHtml(String(err).slice(0, 200))}</li>`;
+    } else {
+      const li = document.createElement('li');
+      li.className = 'text-sm text-red-400 px-2 py-2';
+      li.textContent = `load more failed: ${String(err).slice(0, 200)}`;
+      searchResults.appendChild(li);
+    }
+    hide(loadMoreBtn);
+  } finally {
+    searching = false;
+    setSearchBusy(false);
+  }
+}
+
+function setSearchBusy(busy) {
+  searchBtn.disabled = busy;
+  loadMoreBtn.disabled = busy;
+  searchBtn.classList.toggle('opacity-60', busy);
+  searchBtn.classList.toggle('cursor-wait', busy);
+}
+
+function appendResults(results, isFirstPage) {
+  if (isFirstPage && !results.length) {
+    searchResults.innerHTML = '';
     show(searchEmpty);
     return;
   }
@@ -525,17 +616,18 @@ function renderResults(results) {
     `;
     searchResults.appendChild(li);
   }
-  show(searchResults);
 }
 
 searchResults.addEventListener('click', e => {
   const li = e.target.closest('li[data-id]');
   if (!li) return;
-  startYoutubeSeparation({ id: li.dataset.id, title: li.dataset.name });
+  const item = { id: li.dataset.id, title: li.dataset.name };
+  closeSearchDialog();
+  startYoutubeSeparation(item);
 });
 
 async function startYoutubeSeparation(item) {
-  show(statusEl); hide(drop); hide(searchZone); hide(player);
+  show(statusEl); hide(drop); hide(player);
   setStatus({ stage: 'downloading_audio', percent: 0, message: item.title });
   await runSeparation(() => fetch('/api/separate-youtube', {
     method: 'POST',

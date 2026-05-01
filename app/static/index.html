@@ -115,6 +115,19 @@
       line-height: 1;
       user-select: none;
     }
+
+    dialog#search-dialog::backdrop {
+      background: rgba(15, 14, 12, 0.55);
+      backdrop-filter: blur(2px);
+    }
+    dialog#search-dialog {
+      padding: 0;
+      border: 0;
+      max-width: min(720px, calc(100vw - 32px));
+      width: 100%;
+      max-height: calc(100vh - 64px);
+      border-radius: 16px;
+    }
   </style>
 </head>
 <body class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 min-h-screen font-serif antialiased transition-colors">
@@ -127,27 +140,26 @@
       </button>
     </header>
 
-    <section id="search-zone" class="mb-4">
-      <form id="search-form" class="flex gap-2">
-        <input id="q" type="search" autocomplete="off" placeholder="search youtube…"
-          class="flex-1 h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
-        <button type="submit" id="search-btn" aria-label="search"
-          class="h-11 w-11 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
-          <span class="material-symbols-outlined" style="font-size:22px">search</span>
-        </button>
-      </form>
-      <ul id="search-results" class="hidden mt-3 grid gap-2 list-none p-0"></ul>
-      <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic">no results.</p>
-    </section>
-
     <section id="drop"
-      class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-16 text-center transition-colors">
+      class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-12 text-center transition-colors">
       <input type="file" id="file" accept="audio/*" hidden>
       <p class="text-xl mb-3">drag &amp; drop an audio file</p>
       <p class="text-stone-500 dark:text-stone-400">or
         <button id="browse" type="button"
           class="ml-1 px-3 py-1 rounded-md border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">browse</button>
       </p>
+
+      <div class="flex items-center gap-3 my-6 max-w-xs mx-auto">
+        <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+        <span class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">or</span>
+        <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+      </div>
+
+      <button id="open-search" type="button"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
+        <span class="material-symbols-outlined" style="font-size:20px">search</span>
+        <span>search youtube</span>
+      </button>
     </section>
 
     <section id="status" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-8">
@@ -188,6 +200,43 @@
       <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
     </section>
   </main>
+
+  <dialog id="search-dialog" class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+    <div class="flex flex-col max-h-[calc(100vh-64px)]">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
+        <h2 class="text-xl italic">search youtube</h2>
+        <button id="dialog-close" type="button" aria-label="close"
+          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center">
+          <span class="material-symbols-outlined" style="font-size:20px">close</span>
+        </button>
+      </header>
+
+      <form id="search-form" class="flex gap-2 px-5 py-4">
+        <div class="relative flex-1">
+          <input id="q" type="search" autocomplete="off" placeholder="search youtube…"
+            class="w-full h-11 pl-4 pr-10 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
+          <button id="clear-search" type="button" aria-label="clear"
+            class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center">
+            <span class="material-symbols-outlined" style="font-size:18px">close</span>
+          </button>
+        </div>
+        <button type="submit" id="search-btn" aria-label="search"
+          class="h-11 w-11 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+          <span class="material-symbols-outlined" style="font-size:22px">search</span>
+        </button>
+      </form>
+
+      <div class="flex-1 overflow-y-auto px-5 pb-5">
+        <ul id="search-results" class="grid gap-2 list-none p-0"></ul>
+        <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results.</p>
+        <p id="search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter.</p>
+        <button id="load-more" type="button"
+          class="hidden mt-3 w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-800 hover:border-claude/70 hover:text-claude transition">
+          load more
+        </button>
+      </div>
+    </div>
+  </dialog>
 
   <script src="/static/app.js"></script>
 </body>
