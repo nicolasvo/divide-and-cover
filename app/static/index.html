@@ -3,10 +3,67 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>demucs-web</title>
+  <title>divide and cover</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0&display=block" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            claude: {
+              DEFAULT: '#D97757',
+              50:  '#FBF1ED',
+              100: '#F6E0D5',
+              200: '#EFC4AE',
+              300: '#E89171',
+              400: '#E08465',
+              500: '#D97757',
+              600: '#C96442',
+              700: '#A4522F',
+            },
+            paper: {
+              50:  '#F5F4EE',
+              100: '#EFEDE5',
+              200: '#D9D5C9',
+              700: '#3A3733',
+              800: '#2B2925',
+              900: '#1F1E1B',
+              950: '#151412',
+            },
+          },
+          fontFamily: {
+            serif: ['"Source Serif 4"', 'ui-serif', 'Georgia', 'Cambria', '"Times New Roman"', 'serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <script>
+    // apply theme before paint to avoid FOUC
+    (function() {
+      const stored = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (stored === 'dark' || (!stored && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
   <style>
-    /* native range inputs need pseudo-element styling that tailwind can't reach */
+    :root {
+      --range-fill: #D97757;
+      --range-track: #D6D3D1;
+      --thumb-ring: #FFFFFF;
+    }
+    .dark {
+      --range-track: #44403C;
+      --thumb-ring: #1F1E1B;
+    }
     input[type=range] {
       --p: 0;
       -webkit-appearance: none;
@@ -18,91 +75,103 @@
       height: 6px;
       border-radius: 3px;
       background: linear-gradient(to right,
-        #6ee7b7 0%,
-        #6ee7b7 calc(var(--p) * 1%),
-        #374151 calc(var(--p) * 1%),
-        #374151 100%);
+        var(--range-fill) 0%,
+        var(--range-fill) calc(var(--p) * 1%),
+        var(--range-track) calc(var(--p) * 1%),
+        var(--range-track) 100%);
     }
     input[type=range]::-moz-range-track {
       height: 6px;
       border-radius: 3px;
       background: linear-gradient(to right,
-        #6ee7b7 0%,
-        #6ee7b7 calc(var(--p) * 1%),
-        #374151 calc(var(--p) * 1%),
-        #374151 100%);
+        var(--range-fill) 0%,
+        var(--range-fill) calc(var(--p) * 1%),
+        var(--range-track) calc(var(--p) * 1%),
+        var(--range-track) 100%);
     }
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
       width: 16px; height: 16px;
       border-radius: 9999px;
-      background: #6ee7b7;
+      background: var(--range-fill);
       margin-top: -5px;
-      box-shadow: 0 0 0 3px #171717;
+      box-shadow: 0 0 0 3px var(--thumb-ring);
     }
     input[type=range]::-moz-range-thumb {
       border: 0;
       width: 16px; height: 16px;
       border-radius: 9999px;
-      background: #6ee7b7;
-      box-shadow: 0 0 0 3px #171717;
+      background: var(--range-fill);
+      box-shadow: 0 0 0 3px var(--thumb-ring);
     }
     #seek::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; }
     #seek::-moz-range-track { height: 10px; border-radius: 5px; }
     #seek::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -4px; }
     #seek::-moz-range-thumb { width: 18px; height: 18px; }
+
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      line-height: 1;
+      user-select: none;
+    }
   </style>
 </head>
-<body class="bg-neutral-950 text-neutral-100 min-h-screen font-sans antialiased">
+<body class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 min-h-screen font-serif antialiased transition-colors">
   <main class="max-w-2xl mx-auto px-6 py-14">
-    <header class="mb-8">
-      <h1 class="text-3xl font-semibold tracking-tight">divide and cover</h1>
+    <header class="mb-10 flex items-center justify-between">
+      <h1 class="text-4xl font-semibold tracking-tight italic text-claude">divide and cover</h1>
+      <button id="theme-toggle" title="toggle theme" aria-label="toggle theme"
+        class="w-10 h-10 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 hover:border-claude hover:text-claude transition flex items-center justify-center">
+        <span class="material-symbols-outlined" style="font-size:22px">dark_mode</span>
+      </button>
     </header>
 
     <section id="drop"
-      class="rounded-2xl border-2 border-dashed border-neutral-700 bg-neutral-900 p-16 text-center transition-colors">
+      class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-16 text-center transition-colors">
       <input type="file" id="file" accept="audio/*" hidden>
-      <p class="text-lg mb-2">drag &amp; drop an audio file</p>
-      <p class="text-neutral-400">or
+      <p class="text-xl mb-3">drag &amp; drop an audio file</p>
+      <p class="text-stone-500 dark:text-stone-400">or
         <button id="browse" type="button"
-          class="ml-1 px-3 py-1 rounded-md border border-neutral-700 bg-neutral-800 hover:border-neutral-500 transition">browse</button>
+          class="ml-1 px-3 py-1 rounded-md border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">browse</button>
       </p>
     </section>
 
-    <section id="status" class="hidden rounded-2xl bg-neutral-900 p-8">
-      <div class="flex items-center justify-between mb-3">
-        <p id="status-stage" class="text-neutral-200 font-medium">starting…</p>
-        <span id="status-percent" class="text-sm text-neutral-400 tabular-nums"></span>
+    <section id="status" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-8">
+      <div class="flex items-baseline justify-between mb-3">
+        <p id="status-stage" class="text-lg">starting…</p>
+        <span id="status-percent" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono"></span>
       </div>
-      <div class="h-2 rounded-full bg-neutral-800 overflow-hidden">
-        <div id="status-bar" class="h-full bg-emerald-300 transition-[width] duration-150 ease-linear" style="width:0%"></div>
+      <div class="h-2 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
+        <div id="status-bar" class="h-full bg-claude transition-[width] duration-150 ease-linear" style="width:0%"></div>
       </div>
-      <p id="status-message" class="mt-3 text-xs text-neutral-500 truncate font-mono"></p>
+      <p id="status-message" class="mt-3 text-xs text-stone-400 dark:text-stone-500 truncate font-mono"></p>
     </section>
 
-    <section id="player" class="hidden rounded-2xl bg-neutral-900 p-6">
-      <h2 id="track-name" class="text-base font-medium mb-5 break-words"></h2>
+    <section id="player" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-6">
+      <h2 id="track-name" class="text-xl mb-5 break-words italic"></h2>
 
       <div class="flex items-center gap-2 mb-6">
         <button id="back5" title="back 5s (←)"
-          class="px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-neutral-500 text-sm tabular-nums transition">−5s</button>
-        <button id="playpause"
-          class="min-w-[80px] px-5 py-2 rounded-lg bg-emerald-300 hover:bg-emerald-200 text-neutral-900 font-semibold transition">play</button>
+          class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">−5s</button>
+        <button id="playpause" aria-label="play"
+          class="w-12 h-12 rounded-full bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+          <span class="material-symbols-outlined" style="font-size:28px">play_arrow</span>
+        </button>
         <button id="fwd5" title="forward 5s (→)"
-          class="px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-neutral-500 text-sm tabular-nums transition">+5s</button>
+          class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">+5s</button>
         <input type="range" id="seek" min="0" max="100" value="0" step="0.01" class="flex-1 ml-2">
-        <span id="time" class="text-sm text-neutral-400 tabular-nums">0:00 / 0:00</span>
+        <span id="time" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono">0:00 / 0:00</span>
       </div>
 
       <ul id="stems" class="grid gap-2 mb-4 list-none p-0"></ul>
 
       <button id="reset"
-        class="w-full px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-neutral-500 transition">load another</button>
+        class="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">split another song</button>
     </section>
 
-    <section id="library" class="hidden mt-6">
-      <h3 class="text-sm uppercase tracking-wider text-neutral-500 mb-2">library</h3>
+    <section id="library" class="hidden mt-8">
+      <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">library</h3>
       <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
     </section>
   </main>

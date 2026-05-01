@@ -34,11 +34,11 @@ let startOffset = 0;
 let duration = 0;
 let rafId = null;
 
-const TOGGLE_BASE = 'toggle w-28 px-3 py-1.5 rounded-md border text-sm font-medium capitalize transition';
-const TOGGLE_ON = 'bg-emerald-700 text-emerald-50 border-emerald-700 hover:bg-emerald-600';
-const TOGGLE_OFF = 'bg-transparent text-neutral-500 border-neutral-700 hover:border-neutral-500';
-const DROP_IDLE = ['border-neutral-700', 'bg-neutral-900'];
-const DROP_HOT = ['border-emerald-300', 'bg-emerald-950/30'];
+const TOGGLE_BASE = 'toggle w-28 px-3 py-1.5 rounded-md border text-sm capitalize transition';
+const TOGGLE_ON = 'bg-claude text-paper-50 border-claude hover:bg-claude-300';
+const TOGGLE_OFF = 'bg-transparent text-stone-500 dark:text-stone-500 border-stone-300 dark:border-stone-700 hover:border-stone-500 dark:hover:border-stone-500';
+const DROP_IDLE = ['border-stone-300', 'dark:border-stone-700', 'bg-white', 'dark:bg-paper-800'];
+const DROP_HOT = ['border-claude', 'bg-claude/10'];
 
 // --- drop / browse ---------------------------------------------------------
 
@@ -177,7 +177,7 @@ async function loadPlayer(data) {
   setProgress(seek, 0);
   startOffset = 0;
   playing = false;
-  playpause.textContent = 'play';
+  setPlayIcon();
   updateTimeLabel(0);
 
   renderStems();
@@ -190,7 +190,7 @@ function renderStems() {
   stemList.innerHTML = '';
   STEMS.forEach(stem => {
     const li = document.createElement('li');
-    li.className = 'flex items-center gap-3 px-3 py-2.5 bg-neutral-800/60 rounded-lg';
+    li.className = 'flex items-center gap-3 px-3 py-2.5 bg-paper-100 dark:bg-paper-900/60 rounded-lg';
     li.innerHTML = `
       <button data-stem="${stem}" class="${TOGGLE_BASE} ${TOGGLE_ON}">${stem}</button>
       <input type="range" class="vol flex-1" data-stem="${stem}" min="0" max="1" step="0.01" value="1">
@@ -198,6 +198,12 @@ function renderStems() {
     stemList.appendChild(li);
   });
   stemList.querySelectorAll('input[type=range]').forEach(v => setProgress(v, 1));
+}
+
+function setPlayIcon() {
+  const span = playpause.querySelector('.material-symbols-outlined');
+  if (span) span.textContent = playing ? 'pause' : 'play_arrow';
+  playpause.setAttribute('aria-label', playing ? 'pause' : 'play');
 }
 
 function paintToggle(btn, on) {
@@ -221,7 +227,7 @@ function play() {
   });
 
   playing = true;
-  playpause.textContent = 'pause';
+  setPlayIcon();
   tick();
 }
 
@@ -233,7 +239,7 @@ function pause() {
   });
   sources = {};
   playing = false;
-  playpause.textContent = 'play';
+  setPlayIcon();
   cancelAnimationFrame(rafId);
 }
 
@@ -371,11 +377,11 @@ async function refreshLibrary() {
   libraryList.innerHTML = '';
   for (const t of tracks) {
     const li = document.createElement('li');
-    li.className = 'flex items-center gap-2 px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg hover:border-neutral-700 transition';
+    li.className = 'flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/40 transition';
     li.innerHTML = `
-      <button class="lib-load flex-1 text-left text-sm truncate hover:text-emerald-300 transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
-      <span class="text-xs text-neutral-500 tabular-nums">${fmtDate(t.created_at)}</span>
-      <button class="lib-del px-2 py-1 text-neutral-500 hover:text-red-400 transition" data-job="${t.job_id}" title="delete">✕</button>
+      <button class="lib-load flex-1 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
+      <span class="text-xs text-stone-500 tabular-nums font-mono">${fmtDate(t.created_at)}</span>
+      <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition" data-job="${t.job_id}" title="delete">✕</button>
     `;
     libraryList.appendChild(li);
   }
@@ -433,3 +439,21 @@ function escapeHtml(s) {
 function escapeAttr(s) { return escapeHtml(s); }
 
 refreshLibrary();
+
+// --- theme toggle ----------------------------------------------------------
+
+const themeToggle = $('theme-toggle');
+
+function paintThemeIcon() {
+  const isDark = document.documentElement.classList.contains('dark');
+  const span = themeToggle.querySelector('.material-symbols-outlined');
+  if (span) span.textContent = isDark ? 'light_mode' : 'dark_mode';
+}
+
+themeToggle.addEventListener('click', () => {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  paintThemeIcon();
+});
+
+paintThemeIcon();
