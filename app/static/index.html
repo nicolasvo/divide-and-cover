@@ -127,6 +127,19 @@
       </button>
     </header>
 
+    <section id="search-zone" class="mb-4">
+      <form id="search-form" class="flex gap-2">
+        <input id="q" type="search" autocomplete="off" placeholder="search youtube…"
+          class="flex-1 h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
+        <button type="submit" id="search-btn" aria-label="search"
+          class="h-11 w-11 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+          <span class="material-symbols-outlined" style="font-size:22px">search</span>
+        </button>
+      </form>
+      <ul id="search-results" class="hidden mt-3 grid gap-2 list-none p-0"></ul>
+      <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic">no results.</p>
+    </section>
+
     <section id="drop"
       class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-16 text-center transition-colors">
       <input type="file" id="file" accept="audio/*" hidden>

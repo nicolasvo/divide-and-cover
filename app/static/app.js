@@ -20,6 +20,12 @@ const stemList = $('stems');
 const resetBtn = $('reset');
 const library = $('library');
 const libraryList = $('library-list');
+const searchZone = $('search-zone');
+const searchForm = $('search-form');
+const searchInput = $('q');
+const searchBtn = $('search-btn');
+const searchResults = $('search-results');
+const searchEmpty = $('search-empty');
 
 let ctx = null;
 let buffers = {};
@@ -68,17 +74,23 @@ drop.addEventListener('drop', e => {
 // --- upload + separate -----------------------------------------------------
 
 async function upload(file) {
-  show(statusEl); hide(drop); hide(player);
+  show(statusEl); hide(drop); hide(searchZone); hide(player);
   setStatus({ stage: 'uploading', percent: 0, message: file.name });
+  await runSeparation(() => fetch('/api/separate', { method: 'POST', body: formData('file', file) }));
+}
 
+function formData(key, value) {
   const fd = new FormData();
-  fd.append('file', file);
+  fd.append(key, value);
+  return fd;
+}
 
+async function runSeparation(makeRequest) {
   let resp;
   try {
-    resp = await fetch('/api/separate', { method: 'POST', body: fd });
+    resp = await makeRequest();
   } catch (e) {
-    return fail(`upload failed: ${e}`);
+    return fail(`request failed: ${e}`);
   }
   if (!resp.ok || !resp.body) {
     const err = await resp.text();
@@ -115,18 +127,19 @@ async function upload(file) {
   }
   if (!done) return fail('no result from server');
 
-  setStatus({ stage: 'loading', percent: 100, message: 'decoding stems…' });
+  setStatus({ stage: 'loading', percent: 100, message: 'decoding tracks...' });
   await loadPlayer(done);
   refreshLibrary();
 }
 
 const STAGE_LABELS = {
   uploading: 'uploading',
+  downloading_audio: 'downloading audio',
   starting: 'starting demucs',
   download: 'downloading model',
-  separate: 'separating stems',
-  saving: 'saving stems',
-  loading: 'decoding stems',
+  separate: 'separating tracks',
+  saving: 'saving tracks',
+  loading: 'decoding tracks',
 };
 
 function setStatus({ stage, percent, message }) {
@@ -144,7 +157,7 @@ function fail(msg) {
   statusPercent.textContent = '';
   statusBar.style.width = '0%';
   statusMessage.textContent = msg;
-  setTimeout(() => { hide(statusEl); show(drop); }, 4000);
+  setTimeout(() => { hide(statusEl); show(drop); show(searchZone); }, 4000);
 }
 
 // --- player ----------------------------------------------------------------
@@ -192,7 +205,7 @@ function renderStems() {
     const li = document.createElement('li');
     li.className = 'flex items-center gap-3 px-3 py-2.5 bg-paper-100 dark:bg-paper-900/60 rounded-lg';
     li.innerHTML = `
-      <button data-stem="${stem}" class="${TOGGLE_BASE} ${TOGGLE_ON}">${stem}</button>
+      <button data-stem="${stem}" data-on="1" class="${TOGGLE_BASE} ${TOGGLE_ON}">${stem}</button>
       <input type="range" class="vol flex-1" data-stem="${stem}" min="0" max="1" step="0.01" value="1">
     `;
     stemList.appendChild(li);
@@ -336,7 +349,7 @@ resetBtn.addEventListener('click', () => {
   buffers = {}; gains = {}; sources = {}; muted = {}; volumes = {};
   duration = 0; startOffset = 0;
   fileInput.value = '';
-  hide(player); show(drop);
+  hide(player); show(drop); show(searchZone);
 });
 
 function show(el) { el.classList.remove('hidden'); }
@@ -408,7 +421,7 @@ libraryList.addEventListener('click', async e => {
 
 async function loadFromLibrary(item) {
   pause();
-  show(statusEl); hide(drop); hide(player);
+  show(statusEl); hide(drop); hide(searchZone); hide(player);
   setStatus({ stage: 'loading', percent: 100, message: item.name });
   const data = {
     job_id: item.job_id,
@@ -457,3 +470,76 @@ themeToggle.addEventListener('click', () => {
 });
 
 paintThemeIcon();
+
+// --- youtube search --------------------------------------------------------
+
+let searching = false;
+
+searchForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = searchInput.value.trim();
+  if (!q || searching) return;
+  searching = true;
+  searchBtn.disabled = true;
+  searchBtn.classList.add('opacity-60', 'cursor-wait');
+  hide(searchEmpty);
+  searchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
+  show(searchResults);
+
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=10`);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    renderResults(data.results || []);
+  } catch (err) {
+    searchResults.innerHTML = `<li class="text-sm text-red-400 px-2 py-2">search failed: ${escapeHtml(String(err).slice(0, 200))}</li>`;
+  } finally {
+    searching = false;
+    searchBtn.disabled = false;
+    searchBtn.classList.remove('opacity-60', 'cursor-wait');
+  }
+});
+
+function renderResults(results) {
+  searchResults.innerHTML = '';
+  if (!results.length) {
+    hide(searchResults);
+    show(searchEmpty);
+    return;
+  }
+  hide(searchEmpty);
+  for (const r of results) {
+    const li = document.createElement('li');
+    li.className = 'flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group';
+    li.dataset.id = r.id;
+    li.dataset.name = r.title;
+    li.innerHTML = `
+      <img src="${escapeAttr(r.thumbnail)}" alt="" loading="lazy"
+        class="w-32 aspect-video object-cover rounded bg-stone-200 dark:bg-stone-700 shrink-0">
+      <div class="flex-1 min-w-0 flex flex-col justify-center">
+        <p class="text-sm leading-snug line-clamp-2 group-hover:text-claude transition">${escapeHtml(r.title)}</p>
+        <p class="mt-1 text-xs text-stone-500 dark:text-stone-400 truncate">
+          ${escapeHtml(r.channel || '')}${r.duration ? ` · <span class="font-mono tabular-nums">${fmt(r.duration)}</span>` : ''}
+        </p>
+      </div>
+    `;
+    searchResults.appendChild(li);
+  }
+  show(searchResults);
+}
+
+searchResults.addEventListener('click', e => {
+  const li = e.target.closest('li[data-id]');
+  if (!li) return;
+  startYoutubeSeparation({ id: li.dataset.id, title: li.dataset.name });
+});
+
+async function startYoutubeSeparation(item) {
+  show(statusEl); hide(drop); hide(searchZone); hide(player);
+  setStatus({ stage: 'downloading_audio', percent: 0, message: item.title });
+  await runSeparation(() => fetch('/api/separate-youtube', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video_id: item.id, name: item.title }),
+  }));
+}
