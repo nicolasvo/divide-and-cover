@@ -1,0 +1,14 @@
+[project]
+name = "demucs-web"
+version = "0.1.0"
+description = "Drop a song, get four stems."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "demucs>=4.0.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.20",
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>demucs-web</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* native range inputs need pseudo-element styling that tailwind can't reach */
+    input[type=range] {
+      --p: 0;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      width: 100%;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(to right,
+        #6ee7b7 0%,
+        #6ee7b7 calc(var(--p) * 1%),
+        #374151 calc(var(--p) * 1%),
+        #374151 100%);
+    }
+    input[type=range]::-moz-range-track {
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(to right,
+        #6ee7b7 0%,
+        #6ee7b7 calc(var(--p) * 1%),
+        #374151 calc(var(--p) * 1%),
+        #374151 100%);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 9999px;
+      background: #6ee7b7;
+      margin-top: -5px;
+      box-shadow: 0 0 0 3px #171717;
+    }
+    input[type=range]::-moz-range-thumb {
+      border: 0;
+      width: 16px; height: 16px;
+      border-radius: 9999px;
+      background: #6ee7b7;
+      box-shadow: 0 0 0 3px #171717;
+    }
+    #seek::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; }
+    #seek::-moz-range-track { height: 10px; border-radius: 5px; }
+    #seek::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -4px; }
+    #seek::-moz-range-thumb { width: 18px; height: 18px; }
+  </style>
+</head>
+<body class="bg-neutral-950 text-neutral-100 min-h-screen font-sans antialiased">
+  <main class="max-w-2xl mx-auto px-6 py-14">
+    <header class="mb-8">
+      <h1 class="text-3xl font-semibold tracking-tight">divide and cover</h1>
+    </header>
+
+    <section id="drop"
+      class="rounded-2xl border-2 border-dashed border-neutral-700 bg-neutral-900 p-16 text-center transition-colors">
+      <input type="file" id="file" accept="audio/*" hidden>
+      <p class="text-lg mb-2">drag &amp; drop an audio file</p>
+      <p class="text-neutral-400">or
+        <button id="browse" type="button"
+          class="ml-1 px-3 py-1 rounded-md border border-neutral-700 bg-neutral-800 hover:border-neutral-500 transition">browse</button>
+      </p>
+    </section>
+
+    <section id="status" class="hidden rounded-2xl bg-neutral-900 p-8">
+      <div class="flex items-center justify-between mb-3">
+        <p id="status-stage" class="text-neutral-200 font-medium">starting…</p>
+        <span id="status-percent" class="text-sm text-neutral-400 tabular-nums"></span>
+      </div>
+      <div class="h-2 rounded-full bg-neutral-800 overflow-hidden">
+        <div id="status-bar" class="h-full bg-emerald-300 transition-[width] duration-150 ease-linear" style="width:0%"></div>
+      </div>
+      <p id="status-message" class="mt-3 text-xs text-neutral-500 truncate font-mono"></p>
+    </section>
+
+    <section id="player" class="hidden rounded-2xl bg-neutral-900 p-6">
+      <h2 id="track-name" class="text-base font-medium mb-5 break-words"></h2>
+
+      <div class="flex items-center gap-2 mb-6">
+        <button id="back5" title="back 5s (←)"
+          class="px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-neutral-500 text-sm tabular-nums transition">−5s</button>
+        <button id="playpause"
+          class="min-w-[80px] px-5 py-2 rounded-lg bg-emerald-300 hover:bg-emerald-200 text-neutral-900 font-semibold transition">play</button>
+        <button id="fwd5" title="forward 5s (→)"
+          class="px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-neutral-500 text-sm tabular-nums transition">+5s</button>
+        <input type="range" id="seek" min="0" max="100" value="0" step="0.01" class="flex-1 ml-2">
+        <span id="time" class="text-sm text-neutral-400 tabular-nums">0:00 / 0:00</span>
+      </div>
+
+      <ul id="stems" class="grid gap-2 mb-4 list-none p-0"></ul>
+
+      <button id="reset"
+        class="w-full px-3 py-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:border-neutral-500 transition">load another</button>
+    </section>
+
+    <section id="library" class="hidden mt-6">
+      <h3 class="text-sm uppercase tracking-wider text-neutral-500 mb-2">library</h3>
+      <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
