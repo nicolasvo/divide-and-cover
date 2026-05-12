@@ -35,7 +35,6 @@ const lyricsPane = $('lyrics-pane');
 const lyricsHeader = $('lyrics-header');
 const lyricsTitle = $('lyrics-title');
 const lyricsArtist = $('lyrics-artist');
-const lyricsEditBtn = $('lyrics-edit');
 const lyricsEmpty = $('lyrics-empty');
 const lyricsLoading = $('lyrics-loading');
 const lyricsNone = $('lyrics-none');
@@ -422,9 +421,9 @@ async function refreshLibrary() {
     const li = document.createElement('li');
     li.className = 'flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/40 transition';
     li.innerHTML = `
-      <button class="lib-load flex-1 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
-      <span class="text-xs text-stone-500 tabular-nums font-mono">${fmtDate(t.created_at)}</span>
-      <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition" data-job="${t.job_id}" title="delete">✕</button>
+      <button class="lib-load flex-1 min-w-0 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
+      <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">${fmtDate(t.created_at)}</span>
+      <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition shrink-0" data-job="${t.job_id}" title="delete">✕</button>
     `;
     libraryList.appendChild(li);
   }
@@ -619,7 +618,7 @@ function updateActiveLyric(t) {
   el.classList.add('active');
 
   const container = lyricsContent;
-  const target = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
+  const target = Math.max(0, el.offsetTop - container.clientHeight * 0.28);
   container.scrollTo({ top: target, behavior: 'smooth' });
 }
 
@@ -635,17 +634,6 @@ lyricsRetryForm.addEventListener('submit', e => {
   const q = lyricsQueryInput.value.trim();
   if (!q || !currentJobId) return;
   loadLyrics(currentJobId, q, { q, refresh: true });
-});
-
-lyricsEditBtn.addEventListener('click', () => {
-  if (!currentJobId) return;
-  const seed = lyrics.title
-    ? (lyrics.artist ? `${lyrics.artist} - ${lyrics.title}` : lyrics.title)
-    : (trackName.textContent || '');
-  hide(lyricsHeader); hide(lyricsContent); hide(lyricsLoading); hide(lyricsEmpty);
-  show(lyricsNone);
-  lyricsQueryInput.value = seed;
-  setTimeout(() => lyricsQueryInput.focus(), 0);
 });
 
 resetLyricsUI();
