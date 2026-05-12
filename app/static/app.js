@@ -189,7 +189,8 @@ async function loadPlayer(data) {
 
   // kick off lyrics fetch in parallel with audio decode
   currentJobId = data.job_id;
-  lyricsPane.classList.add('lg:flex');
+  lyricsPane.classList.remove('hidden');
+  lyricsPane.classList.add('flex');
   loadLyrics(data.job_id, data.name);
 
   const decoded = await Promise.all(STEMS.map(async s => {
@@ -384,7 +385,8 @@ resetBtn.addEventListener('click', () => {
   hide(player); show(drop);
   currentJobId = null;
   resetLyricsUI();
-  lyricsPane.classList.remove('lg:flex');
+  lyricsPane.classList.add('hidden');
+  lyricsPane.classList.remove('flex');
 });
 
 function show(el) { el.classList.remove('hidden'); }
@@ -664,12 +666,23 @@ function updateActiveLyric(t) {
   if (!userScrolledLyrics) scrollActiveLyricIntoView();
 }
 
+const lgMedia = window.matchMedia('(min-width: 1024px)');
+
 function scrollActiveLyricIntoView() {
   if (activeLyricIdx < 0) return;
   const el = lyricsLinesEl.children[activeLyricIdx];
   if (!el) return;
-  const target = Math.max(0, el.offsetTop - lyricsContent.clientHeight * 0.28);
-  lyricsContent.scrollTo({ top: target, behavior: 'smooth' });
+  if (lgMedia.matches) {
+    // desktop: scroll within the lyrics column
+    const target = Math.max(0, el.offsetTop - lyricsContent.clientHeight * 0.28);
+    lyricsContent.scrollTo({ top: target, behavior: 'smooth' });
+  } else {
+    // mobile: lyrics flow inline — scroll the page so the active line sits ~28% from top of viewport
+    const rect = el.getBoundingClientRect();
+    const target = window.scrollY + rect.top - window.innerHeight * 0.28;
+    lastProgrammaticScrollTs = Date.now();
+    window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  }
 }
 
 function setLyricFollowing(following) {
@@ -682,6 +695,31 @@ function setLyricFollowing(following) {
   // user scrolled away — only flag if playback is engaged
   if (!playing || !lyrics.hasSynced) return;
   userScrolledLyrics = true;
+  updateFollowBtnVisibility();
+}
+
+function updateFollowBtnVisibility() {
+  if (!userScrolledLyrics || !playing || !lyrics.hasSynced) {
+    hide(lyricsFollowBtn);
+    return;
+  }
+  if (lgMedia.matches) {
+    show(lyricsFollowBtn);
+    return;
+  }
+  // mobile: the button is fixed bottom-4 — only show when the song title has
+  // scrolled above it and the aside is still in view
+  const headerRect = lyricsHeader.getBoundingClientRect();
+  const btnTop = window.innerHeight - 52; // ~bottom-4 (16) + button height (~36)
+  if (headerRect.bottom > btnTop) {
+    hide(lyricsFollowBtn);
+    return;
+  }
+  const asideRect = lyricsPane.getBoundingClientRect();
+  if (asideRect.bottom < 0 || asideRect.top > window.innerHeight) {
+    hide(lyricsFollowBtn);
+    return;
+  }
   show(lyricsFollowBtn);
 }
 
@@ -693,6 +731,21 @@ lyricsContent.addEventListener('keydown', e => {
     setLyricFollowing(false);
   }
 });
+
+// on mobile the page scrolls (not lyrics-content) — listen on the window
+let lastProgrammaticScrollTs = 0;
+function onMobileScrollEvent() {
+  if (lgMedia.matches) return;
+  if (Date.now() - lastProgrammaticScrollTs < 700) return;
+  setLyricFollowing(false);
+  updateFollowBtnVisibility();
+}
+window.addEventListener('wheel', onMobileScrollEvent, { passive: true });
+window.addEventListener('touchmove', onMobileScrollEvent, { passive: true });
+window.addEventListener('scroll', () => {
+  if (lgMedia.matches) return;
+  if (userScrolledLyrics) updateFollowBtnVisibility();
+}, { passive: true });
 
 lyricsFollowBtn.addEventListener('click', () => setLyricFollowing(true));
 
