@@ -432,9 +432,12 @@ async function refreshLibrary() {
       <button class="lib-load flex-1 min-w-0 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
       <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">${fmtDate(t.created_at)}</span>
       <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition shrink-0" data-job="${t.job_id}" title="delete">✕</button>
-      <button class="lib-confirm absolute inset-0 bg-red-500 hover:bg-red-400 text-white text-sm font-medium flex items-center justify-end px-4 gap-2 translate-x-full transition-transform duration-200" data-job="${t.job_id}" tabindex="-1">
-        are you sure?
-        <span class="material-symbols-outlined" style="font-size:18px">delete</span>
+      <button class="lib-confirm absolute inset-0 bg-red-500 hover:bg-red-400 text-white text-sm font-medium flex items-center justify-between px-4 gap-6 translate-x-full transition-transform duration-200" data-job="${t.job_id}" tabindex="-1">
+        <span class="flex-1 min-w-0 truncate text-left">${escapeHtml(t.name)}</span>
+        <span class="flex items-center gap-1.5 shrink-0">
+          are you sure?
+          <span class="material-symbols-outlined" style="font-size:18px">delete</span>
+        </span>
       </button>
     `;
     libraryList.appendChild(li);
