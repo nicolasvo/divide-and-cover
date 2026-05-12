@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -385,6 +386,44 @@ def _parse_lrc(body: str) -> list[dict]:
     return out
 
 
+LYRIC_DURATION_TOL = 5.0  # seconds
+
+
+def _get_track_duration(d: Path) -> float | None:
+    """Best-effort: read cached duration from meta.json or probe a stem with ffprobe."""
+    meta_file = d / "meta.json"
+    meta: dict = {}
+    if meta_file.exists():
+        try:
+            meta = json.loads(meta_file.read_text())
+        except json.JSONDecodeError:
+            meta = {}
+    cached = meta.get("duration")
+    if isinstance(cached, (int, float)) and cached > 0:
+        return float(cached)
+
+    probe = d / "vocals.mp3"
+    if not probe.exists():
+        return None
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(probe)],
+            capture_output=True, text=True, timeout=10,
+        )
+        dur = float(out.stdout.strip())
+    except (FileNotFoundError, ValueError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+        return None
+    if dur <= 0:
+        return None
+    meta["duration"] = dur
+    try:
+        meta_file.write_text(json.dumps(meta))
+    except OSError:
+        pass
+    return dur
+
+
 def _lrclib_search(query: str) -> list[dict]:
     url = f"{LRCLIB_BASE}/search?{urllib.parse.urlencode({'q': query})}"
     req = urllib.request.Request(
@@ -443,6 +482,23 @@ async def get_lyrics(job_id: str, q: str | None = None, refresh: bool = False) -
         return {"found": False, "query": query, "reason": hits["error"]}
     if not hits:
         return {"found": False, "query": query}
+
+    track_duration = await asyncio.get_event_loop().run_in_executor(
+        None, lambda: _get_track_duration(d)
+    )
+    if track_duration is not None:
+        matched = [
+            h for h in hits
+            if isinstance(h.get("duration"), (int, float))
+            and abs(h["duration"] - track_duration) <= LYRIC_DURATION_TOL
+        ]
+        if not matched:
+            return {
+                "found": False,
+                "query": query,
+                "reason": f"no match within ±{int(LYRIC_DURATION_TOL)}s of {track_duration:.1f}s",
+            }
+        hits = matched
 
     hits.sort(key=lambda h: (
         not bool(h.get("syncedLyrics")),

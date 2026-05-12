@@ -265,16 +265,13 @@
           </p>
         </div>
 
-        <div id="lyrics-none" class="hidden flex-1 flex flex-col items-center justify-start px-2 text-center gap-4">
+        <div id="lyrics-none" class="hidden flex-1 flex flex-col items-center justify-start px-2 text-center gap-3">
           <p class="text-stone-500 dark:text-stone-400 italic">no lyrics found</p>
-          <form id="lyrics-retry-form" class="w-full max-w-xs flex flex-col gap-2">
-            <input id="lyrics-query" type="search" autocomplete="off" placeholder="artist - title"
-              class="w-full h-10 px-3 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 focus:outline-none focus:border-claude transition text-sm">
-            <button type="submit"
-              class="h-10 rounded-lg border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition text-sm">
-              try again
-            </button>
-          </form>
+          <button id="lyrics-none-search" type="button"
+            class="px-4 h-10 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 transition text-sm font-medium flex items-center gap-2">
+            <span class="material-symbols-outlined" style="font-size:18px">search</span>
+            search lyrics
+          </button>
         </div>
 
         <div id="lyrics-content" class="hidden flex-1 overflow-y-auto overflow-x-hidden pr-6">

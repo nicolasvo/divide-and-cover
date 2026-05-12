@@ -40,8 +40,7 @@ const lyricsLoading = $('lyrics-loading');
 const lyricsNone = $('lyrics-none');
 const lyricsContent = $('lyrics-content');
 const lyricsLinesEl = $('lyrics-lines');
-const lyricsRetryForm = $('lyrics-retry-form');
-const lyricsQueryInput = $('lyrics-query');
+const lyricsNoneSearchBtn = $('lyrics-none-search');
 
 let ctx = null;
 let buffers = {};
@@ -529,7 +528,6 @@ async function loadLyrics(jobId, fallbackName, opts = {}) {
   const hasContent = data && data.found && ((data.lines && data.lines.length) || data.plain);
   if (!hasContent) {
     show(lyricsNone);
-    lyricsQueryInput.value = opts.q || data?.query || fallbackName || '';
     return;
   }
 
@@ -634,11 +632,9 @@ lyricsLinesEl.addEventListener('click', e => {
   if (!playing && ctx) play();
 });
 
-lyricsRetryForm.addEventListener('submit', e => {
-  e.preventDefault();
-  const q = lyricsQueryInput.value.trim();
-  if (!q || !currentJobId) return;
-  loadLyrics(currentJobId, q, { q, refresh: true });
+lyricsNoneSearchBtn.addEventListener('click', () => {
+  if (!currentJobId) return;
+  openLyricsDialog();
 });
 
 resetLyricsUI();
@@ -788,7 +784,6 @@ lyricsSearchResults.addEventListener('click', async e => {
 
   if (!data.found || (!data.lines?.length && !data.plain)) {
     show(lyricsNone);
-    lyricsQueryInput.value = lyricsSearchInput.value || '';
     return;
   }
 
