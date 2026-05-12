@@ -390,40 +390,6 @@ resetBtn.addEventListener('click', () => {
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
 
-// --- confirm dialog --------------------------------------------------------
-
-const confirmDialogEl = $('confirm-dialog');
-const confirmMessageEl = $('confirm-message');
-const confirmOkBtn = $('confirm-ok');
-const confirmCancelBtn = $('confirm-cancel');
-let confirmResolver = null;
-
-function confirmDialog(message, { okLabel = 'delete' } = {}) {
-  confirmMessageEl.textContent = message;
-  confirmOkBtn.textContent = okLabel;
-  return new Promise(resolve => {
-    confirmResolver = resolve;
-    confirmDialogEl.showModal();
-    setTimeout(() => confirmCancelBtn.focus(), 0);
-  });
-}
-
-function resolveConfirm(result) {
-  if (confirmResolver) {
-    const r = confirmResolver;
-    confirmResolver = null;
-    r(result);
-  }
-  confirmDialogEl.close();
-}
-
-confirmOkBtn.addEventListener('click', () => resolveConfirm(true));
-confirmCancelBtn.addEventListener('click', () => resolveConfirm(false));
-confirmDialogEl.addEventListener('cancel', e => { e.preventDefault(); resolveConfirm(false); });
-confirmDialogEl.addEventListener('click', e => {
-  if (e.target === confirmDialogEl) resolveConfirm(false);
-});
-
 // --- keyboard --------------------------------------------------------------
 
 document.addEventListener('keydown', e => {
@@ -459,33 +425,67 @@ async function refreshLibrary() {
   libraryList.innerHTML = '';
   for (const t of tracks) {
     const li = document.createElement('li');
-    li.className = 'flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition';
+    li.className = 'relative overflow-hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition';
     li.innerHTML = `
       <button class="lib-load flex-1 min-w-0 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
       <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">${fmtDate(t.created_at)}</span>
       <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition shrink-0" data-job="${t.job_id}" title="delete">✕</button>
+      <button class="lib-confirm absolute inset-0 bg-red-500 hover:bg-red-400 text-white text-sm font-medium flex items-center justify-end px-4 gap-2 translate-x-full transition-transform duration-200" data-job="${t.job_id}" tabindex="-1">
+        are you sure?
+        <span class="material-symbols-outlined" style="font-size:18px">delete</span>
+      </button>
     `;
     libraryList.appendChild(li);
   }
   show(library);
 }
 
+function closeAllLibConfirms(except) {
+  libraryList.querySelectorAll('.lib-confirm').forEach(b => {
+    if (b === except) return;
+    b.classList.add('translate-x-full');
+    b.classList.remove('translate-x-0');
+  });
+}
+
 libraryList.addEventListener('click', async e => {
-  const load = e.target.closest('.lib-load');
+  const confirmBtn = e.target.closest('.lib-confirm');
+  if (confirmBtn) {
+    if (confirmBtn.classList.contains('translate-x-full')) return; // not yet revealed
+    const jobId = confirmBtn.dataset.job;
+    try {
+      await fetch(`/api/tracks/${jobId}`, { method: 'DELETE' });
+    } catch (_) {}
+    refreshLibrary();
+    return;
+  }
+
   const del = e.target.closest('.lib-del');
+  if (del) {
+    const overlay = del.closest('li').querySelector('.lib-confirm');
+    closeAllLibConfirms(overlay);
+    overlay.classList.remove('translate-x-full');
+    overlay.classList.add('translate-x-0');
+    return;
+  }
+
+  const load = e.target.closest('.lib-load');
   if (load) {
     const jobId = load.dataset.job;
     loadFromLibrary({ job_id: jobId, name: load.dataset.name });
     return;
   }
-  if (del) {
-    const jobId = del.dataset.job;
-    if (!(await confirmDialog('delete this track?'))) return;
-    try {
-      await fetch(`/api/tracks/${jobId}`, { method: 'DELETE' });
-    } catch (_) {}
-    refreshLibrary();
-  }
+});
+
+// dismiss any open confirm when clicking elsewhere
+document.addEventListener('click', e => {
+  if (e.target.closest('.lib-del') || e.target.closest('.lib-confirm')) return;
+  closeAllLibConfirms();
+});
+
+// dismiss on Esc
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAllLibConfirms();
 });
 
 async function loadFromLibrary(item) {
