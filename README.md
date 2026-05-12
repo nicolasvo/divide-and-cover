@@ -3,9 +3,8 @@
 Drop a song, get four stems. Web UI on top of [demucs](https://github.com/adefossez/demucs).
 
 <p align="center">
-  <img src="screenshots/1.png" width="32%" />
-  <img src="screenshots/2.png" width="32%" />
-  <img src="screenshots/3.png" width="32%" />
+  <img src="screenshots/1.png" width="50%" />
+  <img src="screenshots/2.png" width="50%" />
 </p>
 
 ## Run
