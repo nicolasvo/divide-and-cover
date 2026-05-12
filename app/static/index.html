@@ -348,6 +348,18 @@
     </div>
   </dialog>
 
+  <dialog id="confirm-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif" style="max-width:min(420px,calc(100vw - 32px))">
+    <div class="px-6 py-6 flex flex-col gap-5">
+      <p id="confirm-message" class="text-base leading-snug"></p>
+      <div class="flex justify-end gap-2">
+        <button id="confirm-cancel" type="button"
+          class="px-4 h-10 rounded-lg border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition text-sm">cancel</button>
+        <button id="confirm-ok" type="button"
+          class="px-4 h-10 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 transition text-sm font-medium">delete</button>
+      </div>
+    </div>
+  </dialog>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

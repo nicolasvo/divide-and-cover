@@ -386,6 +386,40 @@ resetBtn.addEventListener('click', () => {
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
 
+// --- confirm dialog --------------------------------------------------------
+
+const confirmDialogEl = $('confirm-dialog');
+const confirmMessageEl = $('confirm-message');
+const confirmOkBtn = $('confirm-ok');
+const confirmCancelBtn = $('confirm-cancel');
+let confirmResolver = null;
+
+function confirmDialog(message, { okLabel = 'delete' } = {}) {
+  confirmMessageEl.textContent = message;
+  confirmOkBtn.textContent = okLabel;
+  return new Promise(resolve => {
+    confirmResolver = resolve;
+    confirmDialogEl.showModal();
+    setTimeout(() => confirmCancelBtn.focus(), 0);
+  });
+}
+
+function resolveConfirm(result) {
+  if (confirmResolver) {
+    const r = confirmResolver;
+    confirmResolver = null;
+    r(result);
+  }
+  confirmDialogEl.close();
+}
+
+confirmOkBtn.addEventListener('click', () => resolveConfirm(true));
+confirmCancelBtn.addEventListener('click', () => resolveConfirm(false));
+confirmDialogEl.addEventListener('cancel', e => { e.preventDefault(); resolveConfirm(false); });
+confirmDialogEl.addEventListener('click', e => {
+  if (e.target === confirmDialogEl) resolveConfirm(false);
+});
+
 // --- keyboard --------------------------------------------------------------
 
 document.addEventListener('keydown', e => {
@@ -442,7 +476,7 @@ libraryList.addEventListener('click', async e => {
   }
   if (del) {
     const jobId = del.dataset.job;
-    if (!confirm('delete this track?')) return;
+    if (!(await confirmDialog('delete this track?'))) return;
     try {
       await fetch(`/api/tracks/${jobId}`, { method: 'DELETE' });
     } catch (_) {}
