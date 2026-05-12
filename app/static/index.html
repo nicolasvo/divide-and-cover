@@ -224,17 +224,21 @@
         <section id="player" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-6">
           <h2 id="track-name" class="text-xl mb-5 break-words italic"></h2>
 
-          <div class="flex items-center gap-2 mb-6">
-            <button id="back5" title="back 5s (←)"
-              class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">−5s</button>
-            <button id="playpause" aria-label="play"
-              class="w-12 h-12 rounded-full bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
-              <span class="material-symbols-outlined" style="font-size:28px">play_arrow</span>
-            </button>
-            <button id="fwd5" title="forward 5s (→)"
-              class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">+5s</button>
-            <input type="range" id="seek" min="0" max="100" value="0" step="0.01" class="flex-1 ml-2">
-            <span id="time" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono">0:00 / 0:00</span>
+          <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-2 mb-6">
+            <div class="flex items-center gap-2 lg:order-2 lg:flex-1">
+              <input type="range" id="seek" min="0" max="100" value="0" step="0.01" class="flex-1">
+              <span id="time" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono">0:00 / 0:00</span>
+            </div>
+            <div class="flex items-center justify-center lg:justify-start gap-2 lg:order-1">
+              <button id="back5" title="back 5s (←)"
+                class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">−5s</button>
+              <button id="playpause" aria-label="play"
+                class="w-12 h-12 rounded-full bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+                <span class="material-symbols-outlined" style="font-size:28px">play_arrow</span>
+              </button>
+              <button id="fwd5" title="forward 5s (→)"
+                class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">+5s</button>
+            </div>
           </div>
 
           <ul id="stems" class="grid gap-2 mb-4 list-none p-0"></ul>
