@@ -40,6 +40,7 @@ const lyricsLoading = $('lyrics-loading');
 const lyricsNone = $('lyrics-none');
 const lyricsContent = $('lyrics-content');
 const lyricsLinesEl = $('lyrics-lines');
+const lyricsFollowBtn = $('lyrics-follow-btn');
 const lyricsNoneSearchBtn = $('lyrics-none-search');
 
 let ctx = null;
@@ -59,6 +60,7 @@ let currentJobId = null;
 let lyrics = { found: false, hasSynced: false, lines: [], plain: '' };
 let activeLyricIdx = -1;
 let lyricsFetchId = 0;
+let userScrolledLyrics = false;
 
 const TOGGLE_BASE = 'toggle w-28 px-3 py-1.5 rounded-md border text-sm capitalize transition';
 const TOGGLE_ON = 'bg-claude text-paper-50 border-claude hover:bg-claude-300';
@@ -287,6 +289,8 @@ function seekTo(t) {
   startOffset = Math.max(0, Math.min(duration, t));
   setProgress(seek, duration ? startOffset / duration : 0);
   updateTimeLabel(startOffset);
+  userScrolledLyrics = false;
+  hide(lyricsFollowBtn);
   updateActiveLyric(startOffset);
   if (wasPlaying) play();
 }
@@ -523,6 +527,7 @@ refreshLibrary();
 function resetLyricsUI() {
   lyrics = { found: false, hasSynced: false, lines: [], plain: '' };
   activeLyricIdx = -1;
+  userScrolledLyrics = false;
   lyricsLinesEl.innerHTML = '';
   lyricsTitle.textContent = '';
   lyricsArtist.textContent = '';
@@ -530,6 +535,7 @@ function resetLyricsUI() {
   hide(lyricsLoading);
   hide(lyricsNone);
   hide(lyricsContent);
+  hide(lyricsFollowBtn);
   show(lyricsEmpty);
 }
 
@@ -589,6 +595,9 @@ async function loadLyrics(jobId, fallbackName, opts = {}) {
 
 function renderLyrics() {
   lyricsLinesEl.innerHTML = '';
+  userScrolledLyrics = false;
+  hide(lyricsFollowBtn);
+  lyricsContent.scrollTop = 0;
   if (lyrics.instrumental && !lyrics.hasSynced && !lyrics.plain) {
     const li = document.createElement('li');
     li.className = 'lyric-line lyric-plain text-stone-500 dark:text-stone-400';
@@ -652,10 +661,40 @@ function updateActiveLyric(t) {
   el.classList.remove('passed');
   el.classList.add('active');
 
-  const container = lyricsContent;
-  const target = Math.max(0, el.offsetTop - container.clientHeight * 0.28);
-  container.scrollTo({ top: target, behavior: 'smooth' });
+  if (!userScrolledLyrics) scrollActiveLyricIntoView();
 }
+
+function scrollActiveLyricIntoView() {
+  if (activeLyricIdx < 0) return;
+  const el = lyricsLinesEl.children[activeLyricIdx];
+  if (!el) return;
+  const target = Math.max(0, el.offsetTop - lyricsContent.clientHeight * 0.28);
+  lyricsContent.scrollTo({ top: target, behavior: 'smooth' });
+}
+
+function setLyricFollowing(following) {
+  if (following) {
+    userScrolledLyrics = false;
+    hide(lyricsFollowBtn);
+    scrollActiveLyricIntoView();
+    return;
+  }
+  // user scrolled away — only flag if playback is engaged
+  if (!playing || !lyrics.hasSynced) return;
+  userScrolledLyrics = true;
+  show(lyricsFollowBtn);
+}
+
+// detect manual scroll (wheel / touch / keyboard) to stop auto-following
+lyricsContent.addEventListener('wheel', () => setLyricFollowing(false), { passive: true });
+lyricsContent.addEventListener('touchmove', () => setLyricFollowing(false), { passive: true });
+lyricsContent.addEventListener('keydown', e => {
+  if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(e.key)) {
+    setLyricFollowing(false);
+  }
+});
+
+lyricsFollowBtn.addEventListener('click', () => setLyricFollowing(true));
 
 lyricsLinesEl.addEventListener('click', e => {
   const li = e.target.closest('.lyric-line');

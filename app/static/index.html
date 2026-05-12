@@ -241,7 +241,7 @@
     </div>
 
     <aside id="lyrics-pane"
-      class="order-3 lg:order-3 hidden mt-10 lg:mt-0 lg:flex-col lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-12rem)]">
+      class="order-3 lg:order-3 hidden mt-10 lg:mt-0 lg:flex-col lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-12rem)] lg:relative">
         <div class="flex-none flex items-center justify-between mb-3">
           <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
           <button id="open-lyrics-search" type="button" title="search lyrics" aria-label="search lyrics"
@@ -277,6 +277,12 @@
         <div id="lyrics-content" class="hidden flex-1 overflow-y-auto overflow-x-hidden pr-6">
           <ol id="lyrics-lines" class="list-none m-0 p-0 space-y-6" style="padding-top:0;padding-bottom:70vh"></ol>
         </div>
+
+        <button id="lyrics-follow-btn" type="button"
+          class="hidden absolute left-1/2 -translate-x-1/2 bottom-4 z-10 pl-4 pr-4 h-9 rounded-full bg-claude hover:bg-claude-300 text-paper-50 text-sm font-medium shadow-lg flex items-center gap-1.5 transition">
+          <span class="material-symbols-outlined" style="font-size:18px">steps</span>
+          follow
+        </button>
       </aside>
   </main>
 
