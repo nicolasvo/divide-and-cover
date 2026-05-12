@@ -18,8 +18,14 @@ const seek = $('seek');
 const timeLabel = $('time');
 const stemList = $('stems');
 const resetBtn = $('reset');
-const library = $('library');
 const libraryList = $('library-list');
+const libraryEmpty = $('library-empty');
+const libraryFilter = $('library-filter');
+const libraryDialog = $('library-dialog');
+const libraryDialogClose = $('library-dialog-close');
+const openLibraryBtn = $('open-library');
+const libraryDivider = $('library-divider');
+let libraryTracks = [];
 const searchDialog = $('search-dialog');
 const openSearchBtn = $('open-search');
 const dialogCloseBtn = $('dialog-close');
@@ -31,6 +37,17 @@ const searchResults = $('search-results');
 const searchEmpty = $('search-empty');
 const searchHint = $('search-hint');
 const loadMoreBtn = $('load-more');
+const lyricsPane = $('lyrics-pane');
+const lyricsHeader = $('lyrics-header');
+const lyricsTitle = $('lyrics-title');
+const lyricsArtist = $('lyrics-artist');
+const lyricsEmpty = $('lyrics-empty');
+const lyricsLoading = $('lyrics-loading');
+const lyricsNone = $('lyrics-none');
+const lyricsContent = $('lyrics-content');
+const lyricsLinesEl = $('lyrics-lines');
+const lyricsFollowBtn = $('lyrics-follow-btn');
+const lyricsNoneSearchBtn = $('lyrics-none-search');
 
 let ctx = null;
 let buffers = {};
@@ -44,6 +61,12 @@ let startCtxTime = 0;
 let startOffset = 0;
 let duration = 0;
 let rafId = null;
+
+let currentJobId = null;
+let lyrics = { found: false, hasSynced: false, lines: [], plain: '' };
+let activeLyricIdx = -1;
+let lyricsFetchId = 0;
+let userScrolledLyrics = false;
 
 const TOGGLE_BASE = 'toggle w-28 px-3 py-1.5 rounded-md border text-sm capitalize transition';
 const TOGGLE_ON = 'bg-claude text-paper-50 border-claude hover:bg-claude-300';
@@ -170,6 +193,12 @@ function fail(msg) {
 async function loadPlayer(data) {
   ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
 
+  // kick off lyrics fetch in parallel with audio decode
+  currentJobId = data.job_id;
+  lyricsPane.classList.remove('hidden');
+  lyricsPane.classList.add('flex');
+  loadLyrics(data.job_id, data.name);
+
   const decoded = await Promise.all(STEMS.map(async s => {
     const r = await fetch(data.stems[s]);
     const ab = await r.arrayBuffer();
@@ -267,6 +296,9 @@ function seekTo(t) {
   startOffset = Math.max(0, Math.min(duration, t));
   setProgress(seek, duration ? startOffset / duration : 0);
   updateTimeLabel(startOffset);
+  userScrolledLyrics = false;
+  hide(lyricsFollowBtn);
+  updateActiveLyric(startOffset);
   if (wasPlaying) play();
 }
 
@@ -299,11 +331,13 @@ function tick() {
     seek.value = 0;
     setProgress(seek, 0);
     updateTimeLabel(0);
+    updateActiveLyric(0);
     return;
   }
   seek.value = t;
   setProgress(seek, t / duration);
   updateTimeLabel(t);
+  updateActiveLyric(t);
   rafId = requestAnimationFrame(tick);
 }
 
@@ -355,6 +389,10 @@ resetBtn.addEventListener('click', () => {
   duration = 0; startOffset = 0;
   fileInput.value = '';
   hide(player); show(drop);
+  currentJobId = null;
+  resetLyricsUI();
+  lyricsPane.classList.add('hidden');
+  lyricsPane.classList.remove('flex');
 });
 
 function show(el) { el.classList.remove('hidden'); }
@@ -383,45 +421,134 @@ async function refreshLibrary() {
   let tracks = [];
   try {
     const r = await fetch('/api/tracks');
-    if (r.ok) tracks = (await r.json()).tracks;
+    if (r.ok) tracks = (await r.json()).tracks || [];
   } catch (_) {}
+  libraryTracks = tracks;
 
-  if (!tracks.length) {
-    hide(library);
-    libraryList.innerHTML = '';
-    return;
+  if (tracks.length) {
+    show(openLibraryBtn);
+    show(libraryDivider);
+  } else {
+    hide(openLibraryBtn);
+    hide(libraryDivider);
   }
 
+  if (libraryDialog.open) {
+    if (!tracks.length) {
+      closeLibraryDialog();
+    } else {
+      renderLibraryList();
+    }
+  }
+}
+
+function renderLibraryList() {
+  const q = (libraryFilter.value || '').trim().toLowerCase();
+  const filtered = q
+    ? libraryTracks.filter(t => (t.name || '').toLowerCase().includes(q))
+    : libraryTracks;
+
   libraryList.innerHTML = '';
-  for (const t of tracks) {
+  if (!filtered.length) {
+    show(libraryEmpty);
+    return;
+  }
+  hide(libraryEmpty);
+  for (const t of filtered) {
     const li = document.createElement('li');
-    li.className = 'flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/40 transition';
+    li.className = 'relative overflow-hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition';
     li.innerHTML = `
-      <button class="lib-load flex-1 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
-      <span class="text-xs text-stone-500 tabular-nums font-mono">${fmtDate(t.created_at)}</span>
-      <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition" data-job="${t.job_id}" title="delete">✕</button>
+      <button class="lib-load flex-1 min-w-0 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
+      <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">${fmtDate(t.created_at)}</span>
+      <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition shrink-0" data-job="${t.job_id}" title="delete">✕</button>
+      <button class="lib-confirm absolute inset-0 bg-red-500 hover:bg-red-400 text-white text-sm font-medium flex items-center justify-between px-4 gap-6 translate-x-full transition-transform duration-200" data-job="${t.job_id}" tabindex="-1" style="transition:none">
+        <span class="flex-1 min-w-0 truncate text-left">${escapeHtml(t.name)}</span>
+        <span class="flex items-center gap-1.5 shrink-0">
+          are you sure?
+          <span class="material-symbols-outlined" style="font-size:18px">delete</span>
+        </span>
+      </button>
     `;
     libraryList.appendChild(li);
   }
-  show(library);
+  // re-enable the slide transition only after layout has settled, so the rows
+  // don't briefly animate translate-x-full when the dialog first opens
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      libraryList.querySelectorAll('.lib-confirm').forEach(b => {
+        b.style.transition = '';
+      });
+    });
+  });
+}
+
+function openLibraryDialog() {
+  libraryFilter.value = '';
+  renderLibraryList();
+  libraryDialog.showModal();
+  setTimeout(() => libraryFilter.focus(), 0);
+}
+
+function closeLibraryDialog() {
+  closeAllLibConfirms();
+  libraryDialog.close();
+}
+
+openLibraryBtn.addEventListener('click', openLibraryDialog);
+libraryDialogClose.addEventListener('click', closeLibraryDialog);
+libraryDialog.addEventListener('click', e => {
+  if (e.target === libraryDialog) closeLibraryDialog();
+});
+libraryFilter.addEventListener('input', renderLibraryList);
+
+function closeAllLibConfirms(except) {
+  libraryList.querySelectorAll('.lib-confirm').forEach(b => {
+    if (b === except) return;
+    b.classList.add('translate-x-full');
+    b.classList.remove('translate-x-0');
+  });
 }
 
 libraryList.addEventListener('click', async e => {
-  const load = e.target.closest('.lib-load');
-  const del = e.target.closest('.lib-del');
-  if (load) {
-    const jobId = load.dataset.job;
-    loadFromLibrary({ job_id: jobId, name: load.dataset.name });
-    return;
-  }
-  if (del) {
-    const jobId = del.dataset.job;
-    if (!confirm('delete this track?')) return;
+  const confirmBtn = e.target.closest('.lib-confirm');
+  if (confirmBtn) {
+    if (confirmBtn.classList.contains('translate-x-full')) return; // not yet revealed
+    const jobId = confirmBtn.dataset.job;
     try {
       await fetch(`/api/tracks/${jobId}`, { method: 'DELETE' });
     } catch (_) {}
     refreshLibrary();
+    return;
   }
+
+  const del = e.target.closest('.lib-del');
+  if (del) {
+    const overlay = del.closest('li').querySelector('.lib-confirm');
+    closeAllLibConfirms(overlay);
+    overlay.classList.remove('translate-x-full');
+    overlay.classList.add('translate-x-0');
+    return;
+  }
+
+  const load = e.target.closest('.lib-load');
+  if (load) {
+    const jobId = load.dataset.job;
+    const name = load.dataset.name;
+    closeLibraryDialog();
+    loadFromLibrary({ job_id: jobId, name });
+    return;
+  }
+});
+
+// dismiss any open confirm when clicking elsewhere
+document.addEventListener('click', e => {
+  if (e.target.closest('.lib-del') || e.target.closest('.lib-confirm')) return;
+  closeAllLibConfirms();
+});
+
+// dismiss on Esc
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAllLibConfirms();
 });
 
 async function loadFromLibrary(item) {
@@ -457,6 +584,413 @@ function escapeHtml(s) {
 function escapeAttr(s) { return escapeHtml(s); }
 
 refreshLibrary();
+
+// --- lyrics ----------------------------------------------------------------
+
+function resetLyricsUI() {
+  lyrics = { found: false, hasSynced: false, lines: [], plain: '' };
+  activeLyricIdx = -1;
+  userScrolledLyrics = false;
+  lyricsLinesEl.innerHTML = '';
+  lyricsTitle.textContent = '';
+  lyricsArtist.textContent = '';
+  hide(lyricsHeader);
+  hide(lyricsLoading);
+  hide(lyricsNone);
+  hide(lyricsContent);
+  hide(lyricsFollowBtn);
+  show(lyricsEmpty);
+}
+
+async function loadLyrics(jobId, fallbackName, opts = {}) {
+  if (!jobId) return;
+  const myFetchId = ++lyricsFetchId;
+  hide(lyricsEmpty); hide(lyricsNone); hide(lyricsContent); hide(lyricsHeader);
+  show(lyricsLoading);
+  lyricsLinesEl.innerHTML = '';
+  activeLyricIdx = -1;
+
+  const params = new URLSearchParams();
+  if (opts.q) params.set('q', opts.q);
+  if (opts.refresh) params.set('refresh', '1');
+  const url = `/api/lyrics/${jobId}${params.toString() ? '?' + params : ''}`;
+
+  let data;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('http ' + r.status);
+    data = await r.json();
+  } catch (e) {
+    data = { found: false, reason: String(e) };
+  }
+
+  if (myFetchId !== lyricsFetchId || jobId !== currentJobId) return;
+
+  hide(lyricsLoading);
+
+  const hasContent = data && data.found && ((data.lines && data.lines.length) || data.plain);
+  if (!hasContent) {
+    show(lyricsNone);
+    return;
+  }
+
+  lyrics = {
+    found: true,
+    hasSynced: !!(data.lines && data.lines.length),
+    lines: data.lines || [],
+    plain: data.plain || '',
+    title: data.title || fallbackName || '',
+    artist: data.artist || '',
+    instrumental: !!data.instrumental,
+  };
+
+  lyricsTitle.textContent = lyrics.title;
+  lyricsArtist.textContent = lyrics.artist;
+  show(lyricsHeader);
+
+  renderLyrics();
+  show(lyricsContent);
+  // reset scroll to top so first active line scrolls in naturally
+  lyricsContent.scrollTop = 0;
+  // sync immediately to current playback position
+  updateActiveLyric(currentTime ? (playing ? currentTime() : startOffset) : 0);
+}
+
+function renderLyrics() {
+  lyricsLinesEl.innerHTML = '';
+  userScrolledLyrics = false;
+  hide(lyricsFollowBtn);
+  lyricsContent.scrollTop = 0;
+  if (lyrics.instrumental && !lyrics.hasSynced && !lyrics.plain) {
+    const li = document.createElement('li');
+    li.className = 'lyric-line lyric-plain text-stone-500 dark:text-stone-400';
+    li.textContent = '♪ instrumental ♪';
+    lyricsLinesEl.appendChild(li);
+    return;
+  }
+  if (lyrics.hasSynced) {
+    for (let i = 0; i < lyrics.lines.length; i++) {
+      const ln = lyrics.lines[i];
+      const li = document.createElement('li');
+      li.className = 'lyric-line' + (ln.text ? '' : ' gap');
+      li.dataset.t = ln.t;
+      li.dataset.i = i;
+      if (ln.text) li.textContent = ln.text;
+      lyricsLinesEl.appendChild(li);
+    }
+  } else if (lyrics.plain) {
+    for (const raw of lyrics.plain.split('\n')) {
+      const li = document.createElement('li');
+      li.className = 'lyric-line lyric-plain';
+      li.textContent = raw || ' ';
+      lyricsLinesEl.appendChild(li);
+    }
+  }
+}
+
+function updateActiveLyric(t) {
+  if (!lyrics.hasSynced || !lyrics.lines.length) return;
+  // binary search: largest i where lines[i].t <= t
+  let lo = 0, hi = lyrics.lines.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (lyrics.lines[mid].t <= t) { ans = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  if (ans === activeLyricIdx) return;
+
+  if (activeLyricIdx >= 0) {
+    const prev = lyricsLinesEl.children[activeLyricIdx];
+    if (prev) {
+      prev.classList.remove('active');
+      prev.classList.add('passed');
+    }
+  }
+  activeLyricIdx = ans;
+  if (ans < 0) return;
+
+  // mark all passed lines (in case of large seek)
+  for (let i = 0; i < ans; i++) {
+    const el = lyricsLinesEl.children[i];
+    if (el && !el.classList.contains('passed')) el.classList.add('passed');
+  }
+  for (let i = ans + 1; i < lyrics.lines.length; i++) {
+    const el = lyricsLinesEl.children[i];
+    if (el) el.classList.remove('passed');
+  }
+
+  const el = lyricsLinesEl.children[ans];
+  if (!el) return;
+  el.classList.remove('passed');
+  el.classList.add('active');
+
+  if (!userScrolledLyrics) scrollActiveLyricIntoView();
+}
+
+const lgMedia = window.matchMedia('(min-width: 1024px)');
+
+function scrollActiveLyricIntoView() {
+  if (activeLyricIdx < 0) return;
+  const el = lyricsLinesEl.children[activeLyricIdx];
+  if (!el) return;
+  if (lgMedia.matches) {
+    // desktop: scroll within the lyrics column
+    const target = Math.max(0, el.offsetTop - lyricsContent.clientHeight * 0.28);
+    lyricsContent.scrollTo({ top: target, behavior: 'smooth' });
+  } else {
+    // mobile: lyrics flow inline — scroll the page so the active line sits ~28% from top of viewport
+    const rect = el.getBoundingClientRect();
+    const target = window.scrollY + rect.top - window.innerHeight * 0.28;
+    lastProgrammaticScrollTs = Date.now();
+    window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  }
+}
+
+function setLyricFollowing(following) {
+  if (following) {
+    userScrolledLyrics = false;
+    hide(lyricsFollowBtn);
+    scrollActiveLyricIntoView();
+    return;
+  }
+  // user scrolled away — only flag if playback is engaged
+  if (!playing || !lyrics.hasSynced) return;
+  userScrolledLyrics = true;
+  updateFollowBtnVisibility();
+}
+
+function updateFollowBtnVisibility() {
+  if (!userScrolledLyrics || !playing || !lyrics.hasSynced) {
+    hide(lyricsFollowBtn);
+    return;
+  }
+  if (lgMedia.matches) {
+    show(lyricsFollowBtn);
+    return;
+  }
+  // mobile: the button is fixed bottom-4 — only show when the song title has
+  // scrolled above it and the aside is still in view
+  const headerRect = lyricsHeader.getBoundingClientRect();
+  const btnTop = window.innerHeight - 52; // ~bottom-4 (16) + button height (~36)
+  if (headerRect.bottom > btnTop) {
+    hide(lyricsFollowBtn);
+    return;
+  }
+  const asideRect = lyricsPane.getBoundingClientRect();
+  if (asideRect.bottom < 0 || asideRect.top > window.innerHeight) {
+    hide(lyricsFollowBtn);
+    return;
+  }
+  show(lyricsFollowBtn);
+}
+
+// detect manual scroll (wheel / touch / keyboard) to stop auto-following
+lyricsContent.addEventListener('wheel', () => setLyricFollowing(false), { passive: true });
+lyricsContent.addEventListener('touchmove', () => setLyricFollowing(false), { passive: true });
+lyricsContent.addEventListener('keydown', e => {
+  if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(e.key)) {
+    setLyricFollowing(false);
+  }
+});
+
+// on mobile the page scrolls (not lyrics-content) — listen on the window
+let lastProgrammaticScrollTs = 0;
+function onMobileScrollEvent() {
+  if (lgMedia.matches) return;
+  if (Date.now() - lastProgrammaticScrollTs < 700) return;
+  setLyricFollowing(false);
+  updateFollowBtnVisibility();
+}
+window.addEventListener('wheel', onMobileScrollEvent, { passive: true });
+window.addEventListener('touchmove', onMobileScrollEvent, { passive: true });
+window.addEventListener('scroll', () => {
+  if (lgMedia.matches) return;
+  if (userScrolledLyrics) updateFollowBtnVisibility();
+}, { passive: true });
+
+lyricsFollowBtn.addEventListener('click', () => setLyricFollowing(true));
+
+lyricsLinesEl.addEventListener('click', e => {
+  const li = e.target.closest('.lyric-line');
+  if (!li || li.dataset.t === undefined) return;
+  const t = parseFloat(li.dataset.t);
+  if (!isFinite(t)) return;
+  seekTo(t);
+  if (!playing && ctx) play();
+});
+
+lyricsNoneSearchBtn.addEventListener('click', () => {
+  if (!currentJobId) return;
+  openLyricsDialog();
+});
+
+resetLyricsUI();
+
+// --- lyrics search dialog --------------------------------------------------
+
+const openLyricsSearchBtn = $('open-lyrics-search');
+const lyricsDialog = $('lyrics-dialog');
+const lyricsDialogClose = $('lyrics-dialog-close');
+const lyricsSearchForm = $('lyrics-search-form');
+const lyricsSearchInput = $('lyrics-search-q');
+const lyricsSearchSubmit = $('lyrics-search-submit');
+const lyricsSearchResults = $('lyrics-search-results');
+const lyricsSearchEmpty = $('lyrics-search-empty');
+const lyricsSearchHint = $('lyrics-search-hint');
+
+const DURATION_MATCH_TOL = 0.5; // seconds — highlight only when displayed m:ss matches
+let lyricsSearching = false;
+
+function openLyricsDialog() {
+  const seed = (trackName.textContent || '').trim();
+  lyricsSearchInput.value = seed;
+  lyricsSearchResults.innerHTML = '';
+  hide(lyricsSearchEmpty);
+  show(lyricsSearchHint);
+  lyricsDialog.showModal();
+  setTimeout(() => { lyricsSearchInput.focus(); lyricsSearchInput.select(); }, 0);
+}
+
+function closeLyricsDialog() { lyricsDialog.close(); }
+
+openLyricsSearchBtn.addEventListener('click', () => {
+  if (!currentJobId) return;
+  openLyricsDialog();
+});
+
+lyricsDialogClose.addEventListener('click', closeLyricsDialog);
+
+lyricsDialog.addEventListener('click', e => {
+  if (e.target === lyricsDialog) closeLyricsDialog();
+});
+
+lyricsSearchForm.addEventListener('submit', e => {
+  e.preventDefault();
+  submitLyricsSearch();
+});
+
+async function submitLyricsSearch() {
+  const q = lyricsSearchInput.value.trim();
+  if (!q || lyricsSearching) return;
+  lyricsSearching = true;
+  setLyricsSearchBusy(true);
+  hide(lyricsSearchEmpty);
+  hide(lyricsSearchHint);
+  // only show the "searching…" placeholder when there are no existing results;
+  // subsequent searches keep prior results visible until new ones arrive.
+  if (!lyricsSearchResults.querySelector('li[data-id]')) {
+    lyricsSearchResults.innerHTML = `<li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2"><span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>searching…</li>`;
+  }
+  try {
+    const r = await fetch(`/api/lyrics-search?q=${encodeURIComponent(q)}`);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    renderLyricsSearchResults(data.results || []);
+  } catch (err) {
+    lyricsSearchResults.innerHTML = `<li class="text-sm text-red-400 px-2 py-2">search failed: ${escapeHtml(String(err).slice(0, 200))}</li>`;
+  } finally {
+    lyricsSearching = false;
+    setLyricsSearchBusy(false);
+  }
+}
+
+function setLyricsSearchBusy(busy) {
+  lyricsSearchSubmit.disabled = busy;
+  lyricsSearchSubmit.classList.toggle('opacity-60', busy);
+  lyricsSearchSubmit.classList.toggle('cursor-wait', busy);
+}
+
+function renderLyricsSearchResults(results) {
+  lyricsSearchResults.innerHTML = '';
+  if (!results.length) {
+    show(lyricsSearchEmpty);
+    return;
+  }
+  hide(lyricsSearchEmpty);
+  const trackDuration = duration || 0;
+  for (const r of results) {
+    const li = document.createElement('li');
+    li.className = 'flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group';
+    li.dataset.id = r.id;
+
+    const dur = typeof r.duration === 'number' ? r.duration : 0;
+    const matches = trackDuration && dur && Math.abs(dur - trackDuration) <= DURATION_MATCH_TOL;
+    const durClass = matches
+      ? 'text-claude font-semibold'
+      : 'text-stone-500 dark:text-stone-400';
+
+    const flags = [];
+    if (r.has_sync) flags.push('synced');
+    else if (r.has_plain) flags.push('plain');
+    if (r.instrumental) flags.push('instrumental');
+
+    li.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <p class="text-sm leading-snug truncate group-hover:text-claude transition">
+          <span class="italic">${escapeHtml(r.title || '')}</span>
+        </p>
+        <p class="mt-0.5 text-xs text-stone-500 dark:text-stone-400 truncate">
+          ${escapeHtml(r.artist || '')}${r.album ? ` · ${escapeHtml(r.album)}` : ''}${flags.length ? ` · ${flags.join(', ')}` : ''}
+        </p>
+      </div>
+      <span class="text-sm font-mono tabular-nums shrink-0 ${durClass}">${dur ? fmt(dur) : '—'}</span>
+    `;
+    lyricsSearchResults.appendChild(li);
+  }
+}
+
+lyricsSearchResults.addEventListener('click', async e => {
+  const li = e.target.closest('li[data-id]');
+  if (!li || !currentJobId) return;
+  const lrclibId = parseInt(li.dataset.id, 10);
+  if (!isFinite(lrclibId)) return;
+
+  const jobId = currentJobId;
+  closeLyricsDialog();
+  hide(lyricsEmpty); hide(lyricsNone); hide(lyricsContent); hide(lyricsHeader);
+  show(lyricsLoading);
+  lyricsLinesEl.innerHTML = '';
+  activeLyricIdx = -1;
+
+  let data;
+  try {
+    const r = await fetch(`/api/lyrics/${jobId}/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lrclib_id: lrclibId }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (err) {
+    data = { found: false, reason: String(err) };
+  }
+
+  if (jobId !== currentJobId) return;
+
+  hide(lyricsLoading);
+
+  if (!data.found || (!data.lines?.length && !data.plain)) {
+    show(lyricsNone);
+    return;
+  }
+
+  lyrics = {
+    found: true,
+    hasSynced: !!(data.lines && data.lines.length),
+    lines: data.lines || [],
+    plain: data.plain || '',
+    title: data.title || '',
+    artist: data.artist || '',
+    instrumental: !!data.instrumental,
+  };
+  lyricsTitle.textContent = lyrics.title;
+  lyricsArtist.textContent = lyrics.artist;
+  show(lyricsHeader);
+  renderLyrics();
+  show(lyricsContent);
+  lyricsContent.scrollTop = 0;
+  updateActiveLyric(playing ? currentTime() : startOffset);
+});
 
 // --- theme toggle ----------------------------------------------------------
 
@@ -550,11 +1084,12 @@ async function fetchSearchPage(isFirstPage) {
 
   let placeholder;
   if (isFirstPage) {
-    searchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
+    searchResults.innerHTML = `<li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2"><span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>searching…</li>`;
   } else {
+    hide(loadMoreBtn);
     placeholder = document.createElement('li');
-    placeholder.className = 'text-sm text-stone-500 italic px-2 py-2';
-    placeholder.textContent = 'loading more…';
+    placeholder.className = 'flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2';
+    placeholder.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>loading more…`;
     searchResults.appendChild(placeholder);
   }
 
@@ -593,8 +1128,8 @@ function setSearchBusy(busy) {
 }
 
 function appendResults(results, isFirstPage) {
+  if (isFirstPage) searchResults.innerHTML = '';
   if (isFirstPage && !results.length) {
-    searchResults.innerHTML = '';
     show(searchEmpty);
     return;
   }

@@ -116,11 +116,11 @@
       user-select: none;
     }
 
-    dialog#search-dialog::backdrop {
+    dialog::backdrop {
       background: rgba(15, 14, 12, 0.55);
       backdrop-filter: blur(2px);
     }
-    dialog#search-dialog {
+    dialog.app-dialog {
       padding: 0;
       border: 0;
       max-width: min(720px, calc(100vw - 32px));
@@ -128,80 +128,179 @@
       max-height: calc(100vh - 64px);
       border-radius: 16px;
     }
+
+    /* --- lyrics pane --------------------------------------------------- */
+    #lyrics-content { scroll-behavior: smooth; }
+    #lyrics-content::-webkit-scrollbar { width: 0; }
+    .lyric-line {
+      font-size: clamp(1.25rem, 1.6vw, 1.6rem);
+      font-weight: 700;
+      line-height: 1.18;
+      letter-spacing: -0.01em;
+      color: rgba(120, 113, 108, 0.42); /* stone-500 / 42 */
+      transform: scale(1);
+      transform-origin: left center;
+      transition: color 350ms ease, transform 350ms ease, opacity 350ms ease;
+      cursor: pointer;
+      will-change: transform, color;
+    }
+    .dark .lyric-line { color: rgba(168, 162, 158, 0.28); }
+    .lyric-line:hover { color: rgba(120, 113, 108, 0.95); }
+    .dark .lyric-line:hover { color: rgba(231, 229, 228, 0.85); }
+    .lyric-line.active {
+      color: #D97757;
+      transform: scale(1.04);
+    }
+    .lyric-line.passed { opacity: 0.55; }
+    .lyric-line.gap::before {
+      content: '♪';
+      display: inline-block;
+      opacity: 0.65;
+    }
+    .lyric-plain { cursor: default; font-size: 0.98rem; font-weight: 500; line-height: 1.55; }
+    .lyric-plain:hover { color: inherit; transform: none; }
   </style>
 </head>
 <body class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 min-h-screen font-serif antialiased transition-colors">
-  <main class="max-w-2xl mx-auto px-6 py-14">
-    <header class="mb-10 flex items-center justify-between">
-      <h1 class="text-4xl font-semibold tracking-tight italic text-claude">divide and cover</h1>
+  <main class="max-w-2xl mx-auto px-6 py-14 lg:max-w-none lg:px-10">
+    <header class="mb-10 flex items-center justify-between gap-4 lg:max-w-[36rem]">
+      <h1 class="text-4xl font-semibold tracking-tight italic text-claude leading-none">divide and cover</h1>
       <button id="theme-toggle" title="toggle theme" aria-label="toggle theme"
-        class="w-10 h-10 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 hover:border-claude hover:text-claude transition flex items-center justify-center">
+        class="shrink-0 w-10 h-10 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 hover:border-claude hover:text-claude transition flex items-center justify-center">
         <span class="material-symbols-outlined" style="font-size:22px">dark_mode</span>
       </button>
     </header>
 
-    <section id="drop"
-      class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-12 text-center transition-colors">
-      <input type="file" id="file" accept="audio/*" hidden>
-      <p class="text-xl mb-3">drag &amp; drop an audio file</p>
-      <p class="text-stone-500 dark:text-stone-400">or
-        <button id="browse" type="button"
-          class="ml-1 px-3 py-1 rounded-md border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">browse</button>
-      </p>
+    <div class="lg:flex lg:items-start lg:gap-8">
 
-      <div class="flex items-center gap-3 my-6 max-w-xs mx-auto">
-        <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
-        <span class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">or</span>
-        <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
-      </div>
+      <div class="lg:w-[36rem] lg:flex-none lg:min-w-0">
+        <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">player</h3>
+        <section id="drop"
+          class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-12 text-center transition-colors">
+          <input type="file" id="file" accept="audio/*" hidden>
+          <p class="text-xl mb-3">drag &amp; drop an audio file</p>
+          <button id="browse" type="button"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
+            <span class="material-symbols-outlined" style="font-size:20px">folder_open</span>
+            <span>browse</span>
+          </button>
 
-      <button id="open-search" type="button"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
-        <span class="material-symbols-outlined" style="font-size:20px">search</span>
-        <span>search youtube</span>
-      </button>
-    </section>
+          <div class="flex items-center gap-3 my-6 max-w-xs mx-auto">
+            <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+            <span class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">or</span>
+            <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+          </div>
 
-    <section id="status" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-8">
-      <div class="flex items-baseline justify-between mb-3">
-        <p id="status-stage" class="text-lg">starting…</p>
-        <span id="status-percent" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono"></span>
-      </div>
-      <div class="h-2 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
-        <div id="status-bar" class="h-full bg-claude transition-[width] duration-150 ease-linear" style="width:0%"></div>
-      </div>
-      <p id="status-message" class="mt-3 text-xs text-stone-400 dark:text-stone-500 truncate font-mono"></p>
-    </section>
+          <button id="open-search" type="button"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
+            <span class="material-symbols-outlined" style="font-size:20px">search</span>
+            <span>search youtube</span>
+          </button>
 
-    <section id="player" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-6">
-      <h2 id="track-name" class="text-xl mb-5 break-words italic"></h2>
+          <div id="library-divider" class="hidden flex items-center gap-3 my-6 max-w-xs mx-auto">
+            <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+            <span class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">or</span>
+            <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+          </div>
 
-      <div class="flex items-center gap-2 mb-6">
-        <button id="back5" title="back 5s (←)"
-          class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">−5s</button>
-        <button id="playpause" aria-label="play"
-          class="w-12 h-12 rounded-full bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
-          <span class="material-symbols-outlined" style="font-size:28px">play_arrow</span>
+          <button id="open-library" type="button"
+            class="hidden inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
+            <span class="material-symbols-outlined" style="font-size:20px">library_music</span>
+            <span>open library</span>
+          </button>
+        </section>
+
+        <section id="status" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-8">
+          <div class="flex items-baseline justify-between mb-3">
+            <p id="status-stage" class="text-lg">starting…</p>
+            <span id="status-percent" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono"></span>
+          </div>
+          <div class="h-2 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
+            <div id="status-bar" class="h-full bg-claude transition-[width] duration-150 ease-linear" style="width:0%"></div>
+          </div>
+          <p id="status-message" class="mt-3 text-xs text-stone-400 dark:text-stone-500 truncate font-mono"></p>
+        </section>
+
+        <section id="player" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-6">
+          <h2 id="track-name" class="text-xl mb-5 break-words italic"></h2>
+
+          <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-2 mb-6">
+            <div class="flex items-center gap-2 lg:order-2 lg:flex-1">
+              <input type="range" id="seek" min="0" max="100" value="0" step="0.01" class="flex-1">
+              <span id="time" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono">0:00 / 0:00</span>
+            </div>
+            <div class="flex items-center justify-center lg:justify-start gap-2 lg:order-1">
+              <button id="back5" title="back 5s (←)"
+                class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">−5s</button>
+              <button id="playpause" aria-label="play"
+                class="w-12 h-12 rounded-full bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+                <span class="material-symbols-outlined" style="font-size:28px">play_arrow</span>
+              </button>
+              <button id="fwd5" title="forward 5s (→)"
+                class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">+5s</button>
+            </div>
+          </div>
+
+          <ul id="stems" class="grid gap-2 mb-4 list-none p-0"></ul>
+
+          <button id="reset"
+            class="w-full px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2">
+            select another song
+          </button>
+        </section>
+    </div>
+
+    <aside id="lyrics-pane"
+      class="order-3 hidden flex-col mt-14 lg:mt-0 lg:h-[calc(100vh-12rem)] lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:relative">
+        <div class="flex-none flex items-center justify-between mb-3">
+          <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
+          <button id="open-lyrics-search" type="button" title="search lyrics" aria-label="search lyrics"
+            class="w-7 h-7 -my-1 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center">
+            <span class="material-symbols-outlined" style="font-size:18px">search</span>
+          </button>
+        </div>
+        <header id="lyrics-header" class="hidden flex-none px-2 pb-3">
+          <p id="lyrics-title" class="text-lg italic truncate"></p>
+          <p id="lyrics-artist" class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 truncate"></p>
+        </header>
+
+        <div id="lyrics-empty" class="flex-1 flex items-center justify-center px-2 text-center">
+          <!-- <p class="text-stone-400 dark:text-stone-600 italic">load a song to see synced lyrics</p> -->
+        </div>
+
+        <div id="lyrics-loading" class="hidden flex-1 flex items-start justify-center">
+          <p class="flex items-center gap-2 text-stone-500 dark:text-stone-400 italic">
+            <span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>
+            fetching lyrics…
+          </p>
+        </div>
+
+        <div id="lyrics-none" class="hidden flex-1 flex flex-col items-center justify-start px-2 text-center gap-3">
+          <p class="text-stone-500 dark:text-stone-400 italic">no lyrics found</p>
+          <button id="lyrics-none-search" type="button"
+            class="px-4 h-10 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 transition text-sm font-medium flex items-center gap-2">
+            <span class="material-symbols-outlined" style="font-size:18px">search</span>
+            search lyrics
+          </button>
+        </div>
+
+        <div id="lyrics-content" class="hidden flex-1 overflow-y-auto overflow-x-hidden pr-6">
+          <ol id="lyrics-lines" class="list-none m-0 p-0 space-y-6" style="padding-top:0;padding-bottom:70vh"></ol>
+        </div>
+
+        <button id="lyrics-follow-btn" type="button"
+          class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-30 lg:absolute lg:-translate-x-1/2 px-4 h-9 rounded-full bg-claude hover:bg-claude-300 text-paper-50 text-sm font-medium shadow-lg flex items-center gap-1.5 transition">
+          <span class="material-symbols-outlined" style="font-size:18px">steps</span>
+          follow
         </button>
-        <button id="fwd5" title="forward 5s (→)"
-          class="px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude text-sm tabular-nums font-mono transition">+5s</button>
-        <input type="range" id="seek" min="0" max="100" value="0" step="0.01" class="flex-1 ml-2">
-        <span id="time" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono">0:00 / 0:00</span>
-      </div>
-
-      <ul id="stems" class="grid gap-2 mb-4 list-none p-0"></ul>
-
-      <button id="reset"
-        class="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">split another song</button>
-    </section>
-
-    <section id="library" class="hidden mt-8">
-      <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">library</h3>
-      <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
-    </section>
+      </aside>
   </main>
 
-  <dialog id="search-dialog" class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+
+  <dialog id="search-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
     <div class="flex flex-col max-h-[calc(100vh-64px)]">
       <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
         <h2 class="text-xl italic">search youtube</h2>
@@ -228,12 +327,61 @@
 
       <div class="flex-1 overflow-y-auto px-5 pb-5">
         <ul id="search-results" class="grid gap-2 list-none p-0"></ul>
-        <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results.</p>
-        <p id="search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter.</p>
+        <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
+        <p id="search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter</p>
         <button id="load-more" type="button"
           class="hidden mt-3 w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-800 hover:border-claude/70 hover:text-claude transition">
           load more
         </button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="lyrics-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+    <div class="flex flex-col max-h-[calc(100vh-64px)]">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
+        <h2 class="text-xl italic">search lyrics</h2>
+        <button id="lyrics-dialog-close" type="button" aria-label="close"
+          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center">
+          <span class="material-symbols-outlined" style="font-size:20px">close</span>
+        </button>
+      </header>
+
+      <form id="lyrics-search-form" class="flex gap-2 px-5 py-4">
+        <input id="lyrics-search-q" type="search" autocomplete="off" placeholder="artist - title"
+          class="flex-1 h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
+        <button type="submit" id="lyrics-search-submit" aria-label="search"
+          class="h-11 w-11 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+          <span class="material-symbols-outlined" style="font-size:22px">search</span>
+        </button>
+      </form>
+
+      <div class="flex-1 overflow-y-auto px-5 pb-5">
+        <ul id="lyrics-search-results" class="grid gap-2 list-none p-0"></ul>
+        <p id="lyrics-search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
+        <p id="lyrics-search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter</p>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="library-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+    <div class="flex flex-col max-h-[calc(100vh-64px)]">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
+        <h2 class="text-xl italic">library</h2>
+        <button id="library-dialog-close" type="button" aria-label="close"
+          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center">
+          <span class="material-symbols-outlined" style="font-size:20px">close</span>
+        </button>
+      </header>
+
+      <div class="px-5 py-4">
+        <input id="library-filter" type="search" autocomplete="off" placeholder="filter by title"
+          class="w-full h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-5 pb-5">
+        <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
+        <p id="library-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no tracks match</p>
       </div>
     </div>
   </dialog>
