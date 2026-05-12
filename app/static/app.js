@@ -186,6 +186,11 @@ function fail(msg) {
 async function loadPlayer(data) {
   ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
 
+  // kick off lyrics fetch in parallel with audio decode
+  currentJobId = data.job_id;
+  lyricsPane.classList.add('lg:flex');
+  loadLyrics(data.job_id, data.name);
+
   const decoded = await Promise.all(STEMS.map(async s => {
     const r = await fetch(data.stems[s]);
     const ab = await r.arrayBuffer();
@@ -218,9 +223,6 @@ async function loadPlayer(data) {
 
   hide(statusEl);
   show(player);
-
-  currentJobId = data.job_id;
-  loadLyrics(data.job_id, data.name);
 }
 
 function renderStems() {
@@ -379,6 +381,7 @@ resetBtn.addEventListener('click', () => {
   hide(player); show(drop);
   currentJobId = null;
   resetLyricsUI();
+  lyricsPane.classList.remove('lg:flex');
 });
 
 function show(el) { el.classList.remove('hidden'); }
@@ -419,7 +422,7 @@ async function refreshLibrary() {
   libraryList.innerHTML = '';
   for (const t of tracks) {
     const li = document.createElement('li');
-    li.className = 'flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/40 transition';
+    li.className = 'flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition';
     li.innerHTML = `
       <button class="lib-load flex-1 min-w-0 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
       <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">${fmtDate(t.created_at)}</span>
@@ -626,7 +629,9 @@ lyricsLinesEl.addEventListener('click', e => {
   const li = e.target.closest('.lyric-line');
   if (!li || li.dataset.t === undefined) return;
   const t = parseFloat(li.dataset.t);
-  if (isFinite(t)) seekTo(t);
+  if (!isFinite(t)) return;
+  seekTo(t);
+  if (!playing && ctx) play();
 });
 
 lyricsRetryForm.addEventListener('submit', e => {
@@ -654,9 +659,7 @@ const DURATION_MATCH_TOL = 0.5; // seconds — highlight only when displayed m:s
 let lyricsSearching = false;
 
 function openLyricsDialog() {
-  const seed = lyrics.title
-    ? (lyrics.artist ? `${lyrics.artist} - ${lyrics.title}` : lyrics.title)
-    : (trackName.textContent || '').trim();
+  const seed = (trackName.textContent || '').trim();
   lyricsSearchInput.value = seed;
   lyricsSearchResults.innerHTML = '';
   hide(lyricsSearchEmpty);
@@ -690,7 +693,11 @@ async function submitLyricsSearch() {
   setLyricsSearchBusy(true);
   hide(lyricsSearchEmpty);
   hide(lyricsSearchHint);
-  lyricsSearchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
+  // only show the "searching…" placeholder when there are no existing results;
+  // subsequent searches keep prior results visible until new ones arrive.
+  if (!lyricsSearchResults.querySelector('li[data-id]')) {
+    lyricsSearchResults.innerHTML = `<li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2"><span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>searching…</li>`;
+  }
   try {
     const r = await fetch(`/api/lyrics-search?q=${encodeURIComponent(q)}`);
     if (!r.ok) throw new Error(await r.text());
@@ -755,43 +762,52 @@ lyricsSearchResults.addEventListener('click', async e => {
   const lrclibId = parseInt(li.dataset.id, 10);
   if (!isFinite(lrclibId)) return;
 
-  // visual feedback
-  li.classList.add('opacity-60', 'pointer-events-none');
+  const jobId = currentJobId;
+  closeLyricsDialog();
+  hide(lyricsEmpty); hide(lyricsNone); hide(lyricsContent); hide(lyricsHeader);
+  show(lyricsLoading);
+  lyricsLinesEl.innerHTML = '';
+  activeLyricIdx = -1;
 
+  let data;
   try {
-    const r = await fetch(`/api/lyrics/${currentJobId}/select`, {
+    const r = await fetch(`/api/lyrics/${jobId}/select`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lrclib_id: lrclibId }),
     });
     if (!r.ok) throw new Error(await r.text());
-    const data = await r.json();
-
-    if (!data.found || (!data.lines?.length && !data.plain)) {
-      li.classList.remove('opacity-60', 'pointer-events-none');
-      return;
-    }
-    lyrics = {
-      found: true,
-      hasSynced: !!(data.lines && data.lines.length),
-      lines: data.lines || [],
-      plain: data.plain || '',
-      title: data.title || '',
-      artist: data.artist || '',
-      instrumental: !!data.instrumental,
-    };
-    lyricsTitle.textContent = lyrics.title;
-    lyricsArtist.textContent = lyrics.artist;
-    show(lyricsHeader);
-    hide(lyricsEmpty); hide(lyricsLoading); hide(lyricsNone);
-    renderLyrics();
-    show(lyricsContent);
-    lyricsContent.scrollTop = 0;
-    updateActiveLyric(playing ? currentTime() : startOffset);
-    closeLyricsDialog();
-  } catch (_) {
-    li.classList.remove('opacity-60', 'pointer-events-none');
+    data = await r.json();
+  } catch (err) {
+    data = { found: false, reason: String(err) };
   }
+
+  if (jobId !== currentJobId) return;
+
+  hide(lyricsLoading);
+
+  if (!data.found || (!data.lines?.length && !data.plain)) {
+    show(lyricsNone);
+    lyricsQueryInput.value = lyricsSearchInput.value || '';
+    return;
+  }
+
+  lyrics = {
+    found: true,
+    hasSynced: !!(data.lines && data.lines.length),
+    lines: data.lines || [],
+    plain: data.plain || '',
+    title: data.title || '',
+    artist: data.artist || '',
+    instrumental: !!data.instrumental,
+  };
+  lyricsTitle.textContent = lyrics.title;
+  lyricsArtist.textContent = lyrics.artist;
+  show(lyricsHeader);
+  renderLyrics();
+  show(lyricsContent);
+  lyricsContent.scrollTop = 0;
+  updateActiveLyric(playing ? currentTime() : startOffset);
 });
 
 // --- theme toggle ----------------------------------------------------------
@@ -886,11 +902,12 @@ async function fetchSearchPage(isFirstPage) {
 
   let placeholder;
   if (isFirstPage) {
-    searchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
+    searchResults.innerHTML = `<li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2"><span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>searching…</li>`;
   } else {
+    hide(loadMoreBtn);
     placeholder = document.createElement('li');
-    placeholder.className = 'text-sm text-stone-500 italic px-2 py-2';
-    placeholder.textContent = 'loading more…';
+    placeholder.className = 'flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2';
+    placeholder.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>loading more…`;
     searchResults.appendChild(placeholder);
   }
 
@@ -929,8 +946,8 @@ function setSearchBusy(busy) {
 }
 
 function appendResults(results, isFirstPage) {
+  if (isFirstPage) searchResults.innerHTML = '';
   if (isFirstPage && !results.length) {
-    searchResults.innerHTML = '';
     show(searchEmpty);
     return;
   }

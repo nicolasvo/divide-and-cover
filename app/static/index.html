@@ -234,12 +234,14 @@
           <ul id="stems" class="grid gap-2 mb-4 list-none p-0"></ul>
 
           <button id="reset"
-            class="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">split another song</button>
+            class="w-full px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2">
+            select another song
+          </button>
         </section>
     </div>
 
     <aside id="lyrics-pane"
-      class="order-3 lg:order-3 hidden mt-10 lg:mt-0 lg:flex lg:flex-col lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-12rem)]">
+      class="order-3 lg:order-3 hidden mt-10 lg:mt-0 lg:flex-col lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-12rem)]">
         <div class="flex-none flex items-center justify-between mb-3">
           <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
           <button id="open-lyrics-search" type="button" title="search lyrics" aria-label="search lyrics"
@@ -275,7 +277,7 @@
           </form>
         </div>
 
-        <div id="lyrics-content" class="hidden flex-1 overflow-y-auto px-2">
+        <div id="lyrics-content" class="hidden flex-1 overflow-y-auto overflow-x-hidden pr-6">
           <ol id="lyrics-lines" class="list-none m-0 p-0 space-y-6" style="padding-top:0;padding-bottom:70vh"></ol>
         </div>
       </aside>
@@ -312,8 +314,8 @@
 
       <div class="flex-1 overflow-y-auto px-5 pb-5">
         <ul id="search-results" class="grid gap-2 list-none p-0"></ul>
-        <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results.</p>
-        <p id="search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter.</p>
+        <p id="search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
+        <p id="search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter</p>
         <button id="load-more" type="button"
           class="hidden mt-3 w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-800 hover:border-claude/70 hover:text-claude transition">
           load more
@@ -343,8 +345,8 @@
 
       <div class="flex-1 overflow-y-auto px-5 pb-5">
         <ul id="lyrics-search-results" class="grid gap-2 list-none p-0"></ul>
-        <p id="lyrics-search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results.</p>
-        <p id="lyrics-search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter.</p>
+        <p id="lyrics-search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
+        <p id="lyrics-search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter</p>
       </div>
     </div>
   </dialog>
