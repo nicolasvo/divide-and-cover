@@ -163,7 +163,7 @@
 </head>
 <body class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 min-h-screen font-serif antialiased transition-colors">
   <main class="max-w-2xl mx-auto px-6 py-14 lg:max-w-none lg:px-10">
-    <header class="mb-10 flex items-center justify-between gap-4 lg:max-w-sm">
+    <header class="mb-10 flex items-center justify-between gap-4 lg:max-w-[36rem]">
       <h1 class="text-4xl font-semibold tracking-tight italic text-claude leading-none">divide and cover</h1>
       <button id="theme-toggle" title="toggle theme" aria-label="toggle theme"
         class="shrink-0 w-10 h-10 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 hover:border-claude hover:text-claude transition flex items-center justify-center">
@@ -173,23 +173,17 @@
 
     <div class="lg:flex lg:items-start lg:gap-8">
 
-      <div class="order-2 lg:order-1 mt-14 lg:mt-0 lg:w-[36rem] lg:flex-none lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto">
-        <section id="library" class="hidden">
-          <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">library</h3>
-          <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
-        </section>
-      </div>
-
-      <div class="order-1 lg:order-2 mt-14 lg:mt-0 lg:w-[36rem] lg:flex-none lg:min-w-0">
+      <div class="lg:w-[36rem] lg:flex-none lg:min-w-0">
         <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">player</h3>
         <section id="drop"
           class="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 p-12 text-center transition-colors">
           <input type="file" id="file" accept="audio/*" hidden>
           <p class="text-xl mb-3">drag &amp; drop an audio file</p>
-          <p class="text-stone-500 dark:text-stone-400">or
-            <button id="browse" type="button"
-              class="ml-1 px-3 py-1 rounded-md border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">browse</button>
-          </p>
+          <button id="browse" type="button"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
+            <span class="material-symbols-outlined" style="font-size:20px">folder_open</span>
+            <span>browse</span>
+          </button>
 
           <div class="flex items-center gap-3 my-6 max-w-xs mx-auto">
             <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
@@ -201,6 +195,18 @@
             class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
             <span class="material-symbols-outlined" style="font-size:20px">search</span>
             <span>search youtube</span>
+          </button>
+
+          <div id="library-divider" class="hidden flex items-center gap-3 my-6 max-w-xs mx-auto">
+            <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+            <span class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">or</span>
+            <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
+          </div>
+
+          <button id="open-library" type="button"
+            class="hidden inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition">
+            <span class="material-symbols-outlined" style="font-size:20px">library_music</span>
+            <span>open library</span>
           </button>
         </section>
 
@@ -350,6 +356,28 @@
         <ul id="lyrics-search-results" class="grid gap-2 list-none p-0"></ul>
         <p id="lyrics-search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
         <p id="lyrics-search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter</p>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="library-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+    <div class="flex flex-col max-h-[calc(100vh-64px)]">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
+        <h2 class="text-xl italic">library</h2>
+        <button id="library-dialog-close" type="button" aria-label="close"
+          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center">
+          <span class="material-symbols-outlined" style="font-size:20px">close</span>
+        </button>
+      </header>
+
+      <div class="px-5 py-4">
+        <input id="library-filter" type="search" autocomplete="off" placeholder="filter by title"
+          class="w-full h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-5 pb-5">
+        <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
+        <p id="library-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no tracks match</p>
       </div>
     </div>
   </dialog>

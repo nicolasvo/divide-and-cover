@@ -18,8 +18,14 @@ const seek = $('seek');
 const timeLabel = $('time');
 const stemList = $('stems');
 const resetBtn = $('reset');
-const library = $('library');
 const libraryList = $('library-list');
+const libraryEmpty = $('library-empty');
+const libraryFilter = $('library-filter');
+const libraryDialog = $('library-dialog');
+const libraryDialogClose = $('library-dialog-close');
+const openLibraryBtn = $('open-library');
+const libraryDivider = $('library-divider');
+let libraryTracks = [];
 const searchDialog = $('search-dialog');
 const openSearchBtn = $('open-search');
 const dialogCloseBtn = $('dialog-close');
@@ -415,24 +421,47 @@ async function refreshLibrary() {
   let tracks = [];
   try {
     const r = await fetch('/api/tracks');
-    if (r.ok) tracks = (await r.json()).tracks;
+    if (r.ok) tracks = (await r.json()).tracks || [];
   } catch (_) {}
+  libraryTracks = tracks;
 
-  if (!tracks.length) {
-    hide(library);
-    libraryList.innerHTML = '';
-    return;
+  if (tracks.length) {
+    show(openLibraryBtn);
+    show(libraryDivider);
+  } else {
+    hide(openLibraryBtn);
+    hide(libraryDivider);
   }
 
+  if (libraryDialog.open) {
+    if (!tracks.length) {
+      closeLibraryDialog();
+    } else {
+      renderLibraryList();
+    }
+  }
+}
+
+function renderLibraryList() {
+  const q = (libraryFilter.value || '').trim().toLowerCase();
+  const filtered = q
+    ? libraryTracks.filter(t => (t.name || '').toLowerCase().includes(q))
+    : libraryTracks;
+
   libraryList.innerHTML = '';
-  for (const t of tracks) {
+  if (!filtered.length) {
+    show(libraryEmpty);
+    return;
+  }
+  hide(libraryEmpty);
+  for (const t of filtered) {
     const li = document.createElement('li');
     li.className = 'relative overflow-hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition';
     li.innerHTML = `
       <button class="lib-load flex-1 min-w-0 text-left truncate hover:text-claude transition" data-job="${t.job_id}" data-name="${escapeAttr(t.name)}" title="${escapeAttr(t.name)}">${escapeHtml(t.name)}</button>
       <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">${fmtDate(t.created_at)}</span>
       <button class="lib-del px-2 py-1 text-stone-500 hover:text-claude transition shrink-0" data-job="${t.job_id}" title="delete">✕</button>
-      <button class="lib-confirm absolute inset-0 bg-red-500 hover:bg-red-400 text-white text-sm font-medium flex items-center justify-between px-4 gap-6 translate-x-full transition-transform duration-200" data-job="${t.job_id}" tabindex="-1">
+      <button class="lib-confirm absolute inset-0 bg-red-500 hover:bg-red-400 text-white text-sm font-medium flex items-center justify-between px-4 gap-6 translate-x-full transition-transform duration-200" data-job="${t.job_id}" tabindex="-1" style="transition:none">
         <span class="flex-1 min-w-0 truncate text-left">${escapeHtml(t.name)}</span>
         <span class="flex items-center gap-1.5 shrink-0">
           are you sure?
@@ -442,8 +471,35 @@ async function refreshLibrary() {
     `;
     libraryList.appendChild(li);
   }
-  show(library);
+  // re-enable the slide transition only after layout has settled, so the rows
+  // don't briefly animate translate-x-full when the dialog first opens
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      libraryList.querySelectorAll('.lib-confirm').forEach(b => {
+        b.style.transition = '';
+      });
+    });
+  });
 }
+
+function openLibraryDialog() {
+  libraryFilter.value = '';
+  renderLibraryList();
+  libraryDialog.showModal();
+  setTimeout(() => libraryFilter.focus(), 0);
+}
+
+function closeLibraryDialog() {
+  closeAllLibConfirms();
+  libraryDialog.close();
+}
+
+openLibraryBtn.addEventListener('click', openLibraryDialog);
+libraryDialogClose.addEventListener('click', closeLibraryDialog);
+libraryDialog.addEventListener('click', e => {
+  if (e.target === libraryDialog) closeLibraryDialog();
+});
+libraryFilter.addEventListener('input', renderLibraryList);
 
 function closeAllLibConfirms(except) {
   libraryList.querySelectorAll('.lib-confirm').forEach(b => {
@@ -477,7 +533,9 @@ libraryList.addEventListener('click', async e => {
   const load = e.target.closest('.lib-load');
   if (load) {
     const jobId = load.dataset.job;
-    loadFromLibrary({ job_id: jobId, name: load.dataset.name });
+    const name = load.dataset.name;
+    closeLibraryDialog();
+    loadFromLibrary({ job_id: jobId, name });
     return;
   }
 });
