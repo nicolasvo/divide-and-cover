@@ -6,6 +6,8 @@ import shutil
 import sys
 import tempfile
 import time
+import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 from typing import AsyncIterator
@@ -26,6 +28,16 @@ MODEL = "htdemucs"
 DEMUCS_PCT_RE = re.compile(rb"(\d+)%\|")
 YT_PCT_RE = re.compile(rb"(\d+(?:\.\d+)?)%")
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,15}$")
+
+LRCLIB_BASE = "https://lrclib.net/api"
+LRC_USER_AGENT = "divide-and-cover/0.1 (+https://github.com/)"
+LRC_TIME_RE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
+LRC_NOISE_RE = re.compile(
+    r"\s*[\(\[](?:official[^)\]]*|audio|video|lyrics?|hd|hq|m/?v|live|"
+    r"cover|remix|edit|feat\.?[^)\]]*|ft\.?[^)\]]*|prod\.?[^)\]]*|"
+    r"visualizer|with\s+lyrics?)[\)\]]\s*",
+    re.IGNORECASE,
+)
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -344,3 +356,102 @@ def get_stem(job_id: str, stem: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "stem missing")
     return FileResponse(path, media_type="audio/mpeg")
+
+
+# --- lyrics (lrclib) -------------------------------------------------------
+
+def _clean_lyric_query(name: str) -> str:
+    n = LRC_NOISE_RE.sub(" ", name)
+    n = re.sub(r"\s+", " ", n).strip(" -–—|·•_")
+    return n
+
+
+def _parse_lrc(body: str) -> list[dict]:
+    """Parse LRC text into a sorted list of {t, text} dicts. Empty-text entries kept (instrumental gaps)."""
+    out: list[dict] = []
+    for raw in body.splitlines():
+        text = raw
+        times: list[float] = []
+        while True:
+            m = LRC_TIME_RE.match(text)
+            if not m:
+                break
+            times.append(int(m.group(1)) * 60 + float(m.group(2)))
+            text = text[m.end():]
+        text = text.strip()
+        for t in times:
+            out.append({"t": round(t, 3), "text": text})
+    out.sort(key=lambda x: x["t"])
+    return out
+
+
+def _lrclib_search(query: str) -> list[dict]:
+    url = f"{LRCLIB_BASE}/search?{urllib.parse.urlencode({'q': query})}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": LRC_USER_AGENT, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
+@app.get("/api/lyrics/{job_id}")
+async def get_lyrics(job_id: str, q: str | None = None, refresh: bool = False) -> dict:
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "track not found")
+
+    cache = d / "lyrics.json"
+    if cache.exists() and not refresh and q is None:
+        try:
+            return json.loads(cache.read_text())
+        except json.JSONDecodeError:
+            pass
+
+    name = (q or "").strip()
+    if not name:
+        meta_file = d / "meta.json"
+        if meta_file.exists():
+            try:
+                name = json.loads(meta_file.read_text()).get("name", "")
+            except json.JSONDecodeError:
+                pass
+    name = name.strip()
+    if not name:
+        return {"found": False, "reason": "no track name"}
+
+    query = _clean_lyric_query(name) or name
+
+    def search() -> dict | list:
+        try:
+            return _lrclib_search(query)
+        except Exception as e:
+            return {"error": str(e)[:200]}
+
+    hits = await asyncio.get_event_loop().run_in_executor(None, search)
+    if isinstance(hits, dict) and "error" in hits:
+        return {"found": False, "query": query, "reason": hits["error"]}
+    if not hits:
+        return {"found": False, "query": query}
+
+    hits.sort(key=lambda h: (
+        not bool(h.get("syncedLyrics")),
+        -len(h.get("plainLyrics") or ""),
+    ))
+    best = hits[0]
+    result = {
+        "found": True,
+        "title": best.get("trackName"),
+        "artist": best.get("artistName"),
+        "album": best.get("albumName"),
+        "duration": best.get("duration"),
+        "instrumental": bool(best.get("instrumental")),
+        "lines": _parse_lrc(best.get("syncedLyrics") or ""),
+        "plain": best.get("plainLyrics") or "",
+        "query": query,
+    }
+    try:
+        cache.write_text(json.dumps(result))
+    except OSError:
+        pass
+    return result

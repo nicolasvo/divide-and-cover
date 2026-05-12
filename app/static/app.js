@@ -31,6 +31,18 @@ const searchResults = $('search-results');
 const searchEmpty = $('search-empty');
 const searchHint = $('search-hint');
 const loadMoreBtn = $('load-more');
+const lyricsPane = $('lyrics-pane');
+const lyricsHeader = $('lyrics-header');
+const lyricsTitle = $('lyrics-title');
+const lyricsArtist = $('lyrics-artist');
+const lyricsEditBtn = $('lyrics-edit');
+const lyricsEmpty = $('lyrics-empty');
+const lyricsLoading = $('lyrics-loading');
+const lyricsNone = $('lyrics-none');
+const lyricsContent = $('lyrics-content');
+const lyricsLinesEl = $('lyrics-lines');
+const lyricsRetryForm = $('lyrics-retry-form');
+const lyricsQueryInput = $('lyrics-query');
 
 let ctx = null;
 let buffers = {};
@@ -44,6 +56,11 @@ let startCtxTime = 0;
 let startOffset = 0;
 let duration = 0;
 let rafId = null;
+
+let currentJobId = null;
+let lyrics = { found: false, hasSynced: false, lines: [], plain: '' };
+let activeLyricIdx = -1;
+let lyricsFetchId = 0;
 
 const TOGGLE_BASE = 'toggle w-28 px-3 py-1.5 rounded-md border text-sm capitalize transition';
 const TOGGLE_ON = 'bg-claude text-paper-50 border-claude hover:bg-claude-300';
@@ -202,6 +219,9 @@ async function loadPlayer(data) {
 
   hide(statusEl);
   show(player);
+
+  currentJobId = data.job_id;
+  loadLyrics(data.job_id, data.name);
 }
 
 function renderStems() {
@@ -267,6 +287,7 @@ function seekTo(t) {
   startOffset = Math.max(0, Math.min(duration, t));
   setProgress(seek, duration ? startOffset / duration : 0);
   updateTimeLabel(startOffset);
+  updateActiveLyric(startOffset);
   if (wasPlaying) play();
 }
 
@@ -299,11 +320,13 @@ function tick() {
     seek.value = 0;
     setProgress(seek, 0);
     updateTimeLabel(0);
+    updateActiveLyric(0);
     return;
   }
   seek.value = t;
   setProgress(seek, t / duration);
   updateTimeLabel(t);
+  updateActiveLyric(t);
   rafId = requestAnimationFrame(tick);
 }
 
@@ -355,6 +378,8 @@ resetBtn.addEventListener('click', () => {
   duration = 0; startOffset = 0;
   fileInput.value = '';
   hide(player); show(drop);
+  currentJobId = null;
+  resetLyricsUI();
 });
 
 function show(el) { el.classList.remove('hidden'); }
@@ -457,6 +482,173 @@ function escapeHtml(s) {
 function escapeAttr(s) { return escapeHtml(s); }
 
 refreshLibrary();
+
+// --- lyrics ----------------------------------------------------------------
+
+function resetLyricsUI() {
+  lyrics = { found: false, hasSynced: false, lines: [], plain: '' };
+  activeLyricIdx = -1;
+  lyricsLinesEl.innerHTML = '';
+  lyricsTitle.textContent = '';
+  lyricsArtist.textContent = '';
+  hide(lyricsHeader);
+  hide(lyricsLoading);
+  hide(lyricsNone);
+  hide(lyricsContent);
+  show(lyricsEmpty);
+}
+
+async function loadLyrics(jobId, fallbackName, opts = {}) {
+  if (!jobId) return;
+  const myFetchId = ++lyricsFetchId;
+  hide(lyricsEmpty); hide(lyricsNone); hide(lyricsContent); hide(lyricsHeader);
+  show(lyricsLoading);
+  lyricsLinesEl.innerHTML = '';
+  activeLyricIdx = -1;
+
+  const params = new URLSearchParams();
+  if (opts.q) params.set('q', opts.q);
+  if (opts.refresh) params.set('refresh', '1');
+  const url = `/api/lyrics/${jobId}${params.toString() ? '?' + params : ''}`;
+
+  let data;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('http ' + r.status);
+    data = await r.json();
+  } catch (e) {
+    data = { found: false, reason: String(e) };
+  }
+
+  if (myFetchId !== lyricsFetchId || jobId !== currentJobId) return;
+
+  hide(lyricsLoading);
+
+  const hasContent = data && data.found && ((data.lines && data.lines.length) || data.plain);
+  if (!hasContent) {
+    show(lyricsNone);
+    lyricsQueryInput.value = opts.q || data?.query || fallbackName || '';
+    return;
+  }
+
+  lyrics = {
+    found: true,
+    hasSynced: !!(data.lines && data.lines.length),
+    lines: data.lines || [],
+    plain: data.plain || '',
+    title: data.title || fallbackName || '',
+    artist: data.artist || '',
+    instrumental: !!data.instrumental,
+  };
+
+  lyricsTitle.textContent = lyrics.title;
+  lyricsArtist.textContent = lyrics.artist;
+  show(lyricsHeader);
+
+  renderLyrics();
+  show(lyricsContent);
+  // reset scroll to top so first active line scrolls in naturally
+  lyricsContent.scrollTop = 0;
+  // sync immediately to current playback position
+  updateActiveLyric(currentTime ? (playing ? currentTime() : startOffset) : 0);
+}
+
+function renderLyrics() {
+  lyricsLinesEl.innerHTML = '';
+  if (lyrics.instrumental && !lyrics.hasSynced && !lyrics.plain) {
+    const li = document.createElement('li');
+    li.className = 'lyric-line lyric-plain text-stone-500 dark:text-stone-400';
+    li.textContent = '♪ instrumental ♪';
+    lyricsLinesEl.appendChild(li);
+    return;
+  }
+  if (lyrics.hasSynced) {
+    for (let i = 0; i < lyrics.lines.length; i++) {
+      const ln = lyrics.lines[i];
+      const li = document.createElement('li');
+      li.className = 'lyric-line' + (ln.text ? '' : ' gap');
+      li.dataset.t = ln.t;
+      li.dataset.i = i;
+      if (ln.text) li.textContent = ln.text;
+      lyricsLinesEl.appendChild(li);
+    }
+  } else if (lyrics.plain) {
+    for (const raw of lyrics.plain.split('\n')) {
+      const li = document.createElement('li');
+      li.className = 'lyric-line lyric-plain';
+      li.textContent = raw || ' ';
+      lyricsLinesEl.appendChild(li);
+    }
+  }
+}
+
+function updateActiveLyric(t) {
+  if (!lyrics.hasSynced || !lyrics.lines.length) return;
+  // binary search: largest i where lines[i].t <= t
+  let lo = 0, hi = lyrics.lines.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (lyrics.lines[mid].t <= t) { ans = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  if (ans === activeLyricIdx) return;
+
+  if (activeLyricIdx >= 0) {
+    const prev = lyricsLinesEl.children[activeLyricIdx];
+    if (prev) {
+      prev.classList.remove('active');
+      prev.classList.add('passed');
+    }
+  }
+  activeLyricIdx = ans;
+  if (ans < 0) return;
+
+  // mark all passed lines (in case of large seek)
+  for (let i = 0; i < ans; i++) {
+    const el = lyricsLinesEl.children[i];
+    if (el && !el.classList.contains('passed')) el.classList.add('passed');
+  }
+  for (let i = ans + 1; i < lyrics.lines.length; i++) {
+    const el = lyricsLinesEl.children[i];
+    if (el) el.classList.remove('passed');
+  }
+
+  const el = lyricsLinesEl.children[ans];
+  if (!el) return;
+  el.classList.remove('passed');
+  el.classList.add('active');
+
+  const container = lyricsContent;
+  const target = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
+  container.scrollTo({ top: target, behavior: 'smooth' });
+}
+
+lyricsLinesEl.addEventListener('click', e => {
+  const li = e.target.closest('.lyric-line');
+  if (!li || li.dataset.t === undefined) return;
+  const t = parseFloat(li.dataset.t);
+  if (isFinite(t)) seekTo(t);
+});
+
+lyricsRetryForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const q = lyricsQueryInput.value.trim();
+  if (!q || !currentJobId) return;
+  loadLyrics(currentJobId, q, { q, refresh: true });
+});
+
+lyricsEditBtn.addEventListener('click', () => {
+  if (!currentJobId) return;
+  const seed = lyrics.title
+    ? (lyrics.artist ? `${lyrics.artist} - ${lyrics.title}` : lyrics.title)
+    : (trackName.textContent || '');
+  hide(lyricsHeader); hide(lyricsContent); hide(lyricsLoading); hide(lyricsEmpty);
+  show(lyricsNone);
+  lyricsQueryInput.value = seed;
+  setTimeout(() => lyricsQueryInput.focus(), 0);
+});
+
+resetLyricsUI();
 
 // --- theme toggle ----------------------------------------------------------
 

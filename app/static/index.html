@@ -128,10 +128,41 @@
       max-height: calc(100vh - 64px);
       border-radius: 16px;
     }
+
+    /* --- lyrics pane --------------------------------------------------- */
+    #lyrics-content { scroll-behavior: smooth; }
+    .lyric-line {
+      font-size: clamp(1.6rem, 2.4vw, 2.25rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.015em;
+      color: rgba(120, 113, 108, 0.45); /* stone-500 / 45 */
+      transform: scale(1);
+      transform-origin: left center;
+      transition: color 350ms ease, transform 350ms ease, opacity 350ms ease;
+      cursor: pointer;
+      will-change: transform, color;
+    }
+    .dark .lyric-line { color: rgba(168, 162, 158, 0.32); }
+    .lyric-line:hover { color: rgba(120, 113, 108, 0.95); }
+    .dark .lyric-line:hover { color: rgba(231, 229, 228, 0.85); }
+    .lyric-line.active {
+      color: #D97757;
+      transform: scale(1.04);
+    }
+    .lyric-line.passed { opacity: 0.6; }
+    .lyric-line.gap::before {
+      content: '♪';
+      display: inline-block;
+      opacity: 0.7;
+    }
+    .lyric-plain { cursor: default; font-size: 1.05rem; font-weight: 500; line-height: 1.55; }
+    .lyric-plain:hover { color: inherit; transform: none; }
   </style>
 </head>
 <body class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 min-h-screen font-serif antialiased transition-colors">
-  <main class="max-w-2xl mx-auto px-6 py-14">
+  <div class="lg:grid lg:grid-cols-2 lg:min-h-screen">
+  <main class="max-w-2xl mx-auto lg:mx-0 lg:ml-auto lg:mr-0 lg:w-full lg:max-w-xl px-6 py-14 lg:pr-10">
     <header class="mb-10 flex items-center justify-between">
       <h1 class="text-4xl font-semibold tracking-tight italic text-claude">divide and cover</h1>
       <button id="theme-toggle" title="toggle theme" aria-label="toggle theme"
@@ -200,6 +231,52 @@
       <ul id="library-list" class="grid gap-2 list-none p-0"></ul>
     </section>
   </main>
+
+  <aside id="lyrics-pane"
+    class="hidden lg:flex lg:flex-col bg-paper-100 dark:bg-paper-950 border-l border-stone-200 dark:border-stone-800 lg:sticky lg:top-0 lg:h-screen lg:max-w-xl lg:w-full">
+    <header id="lyrics-header" class="hidden flex-none flex items-baseline justify-between gap-4 px-10 pt-8 pb-4">
+      <div class="min-w-0">
+        <p id="lyrics-title" class="text-lg italic truncate"></p>
+        <p id="lyrics-artist" class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 truncate"></p>
+      </div>
+      <button id="lyrics-edit" type="button" title="search again"
+        class="shrink-0 w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center">
+        <span class="material-symbols-outlined" style="font-size:18px">search</span>
+      </button>
+    </header>
+
+    <div id="lyrics-empty" class="flex-1 flex items-center justify-center px-10 text-center">
+      <p class="text-stone-400 dark:text-stone-600 italic">load a song to see synced lyrics</p>
+    </div>
+
+    <div id="lyrics-loading" class="hidden flex-1 flex items-center justify-center px-10 text-center">
+      <p class="flex items-center gap-2 text-stone-500 dark:text-stone-400 italic">
+        <span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>
+        fetching lyrics…
+      </p>
+    </div>
+
+    <div id="lyrics-none" class="hidden flex-1 flex flex-col items-center justify-center px-10 text-center gap-4">
+      <p class="text-stone-500 dark:text-stone-400 italic">no lyrics found</p>
+      <form id="lyrics-retry-form" class="w-full max-w-xs flex flex-col gap-2">
+        <input id="lyrics-query" type="search" autocomplete="off" placeholder="artist - title"
+          class="w-full h-10 px-3 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 focus:outline-none focus:border-claude transition text-sm">
+        <button type="submit"
+          class="h-10 rounded-lg border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition text-sm">
+          try again
+        </button>
+      </form>
+    </div>
+
+    <div id="lyrics-content" class="hidden flex-1 overflow-y-auto px-10 pt-2 pb-10">
+      <ol id="lyrics-lines" class="list-none m-0 p-0 space-y-7" style="padding-top:45vh;padding-bottom:45vh"></ol>
+    </div>
+  </aside>
+  </div>
+
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 
   <dialog id="search-dialog" class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
     <div class="flex flex-col max-h-[calc(100vh-64px)]">
