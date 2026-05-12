@@ -638,6 +638,162 @@ lyricsRetryForm.addEventListener('submit', e => {
 
 resetLyricsUI();
 
+// --- lyrics search dialog --------------------------------------------------
+
+const openLyricsSearchBtn = $('open-lyrics-search');
+const lyricsDialog = $('lyrics-dialog');
+const lyricsDialogClose = $('lyrics-dialog-close');
+const lyricsSearchForm = $('lyrics-search-form');
+const lyricsSearchInput = $('lyrics-search-q');
+const lyricsSearchSubmit = $('lyrics-search-submit');
+const lyricsSearchResults = $('lyrics-search-results');
+const lyricsSearchEmpty = $('lyrics-search-empty');
+const lyricsSearchHint = $('lyrics-search-hint');
+
+const DURATION_MATCH_TOL = 0.5; // seconds — highlight only when displayed m:ss matches
+let lyricsSearching = false;
+
+function openLyricsDialog() {
+  const seed = lyrics.title
+    ? (lyrics.artist ? `${lyrics.artist} - ${lyrics.title}` : lyrics.title)
+    : (trackName.textContent || '').trim();
+  lyricsSearchInput.value = seed;
+  lyricsSearchResults.innerHTML = '';
+  hide(lyricsSearchEmpty);
+  show(lyricsSearchHint);
+  lyricsDialog.showModal();
+  setTimeout(() => { lyricsSearchInput.focus(); lyricsSearchInput.select(); }, 0);
+}
+
+function closeLyricsDialog() { lyricsDialog.close(); }
+
+openLyricsSearchBtn.addEventListener('click', () => {
+  if (!currentJobId) return;
+  openLyricsDialog();
+});
+
+lyricsDialogClose.addEventListener('click', closeLyricsDialog);
+
+lyricsDialog.addEventListener('click', e => {
+  if (e.target === lyricsDialog) closeLyricsDialog();
+});
+
+lyricsSearchForm.addEventListener('submit', e => {
+  e.preventDefault();
+  submitLyricsSearch();
+});
+
+async function submitLyricsSearch() {
+  const q = lyricsSearchInput.value.trim();
+  if (!q || lyricsSearching) return;
+  lyricsSearching = true;
+  setLyricsSearchBusy(true);
+  hide(lyricsSearchEmpty);
+  hide(lyricsSearchHint);
+  lyricsSearchResults.innerHTML = `<li class="text-sm text-stone-500 italic px-2 py-2">searching…</li>`;
+  try {
+    const r = await fetch(`/api/lyrics-search?q=${encodeURIComponent(q)}`);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    renderLyricsSearchResults(data.results || []);
+  } catch (err) {
+    lyricsSearchResults.innerHTML = `<li class="text-sm text-red-400 px-2 py-2">search failed: ${escapeHtml(String(err).slice(0, 200))}</li>`;
+  } finally {
+    lyricsSearching = false;
+    setLyricsSearchBusy(false);
+  }
+}
+
+function setLyricsSearchBusy(busy) {
+  lyricsSearchSubmit.disabled = busy;
+  lyricsSearchSubmit.classList.toggle('opacity-60', busy);
+  lyricsSearchSubmit.classList.toggle('cursor-wait', busy);
+}
+
+function renderLyricsSearchResults(results) {
+  lyricsSearchResults.innerHTML = '';
+  if (!results.length) {
+    show(lyricsSearchEmpty);
+    return;
+  }
+  hide(lyricsSearchEmpty);
+  const trackDuration = duration || 0;
+  for (const r of results) {
+    const li = document.createElement('li');
+    li.className = 'flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group';
+    li.dataset.id = r.id;
+
+    const dur = typeof r.duration === 'number' ? r.duration : 0;
+    const matches = trackDuration && dur && Math.abs(dur - trackDuration) <= DURATION_MATCH_TOL;
+    const durClass = matches
+      ? 'text-claude font-semibold'
+      : 'text-stone-500 dark:text-stone-400';
+
+    const flags = [];
+    if (r.has_sync) flags.push('synced');
+    else if (r.has_plain) flags.push('plain');
+    if (r.instrumental) flags.push('instrumental');
+
+    li.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <p class="text-sm leading-snug truncate group-hover:text-claude transition">
+          <span class="italic">${escapeHtml(r.title || '')}</span>
+        </p>
+        <p class="mt-0.5 text-xs text-stone-500 dark:text-stone-400 truncate">
+          ${escapeHtml(r.artist || '')}${r.album ? ` · ${escapeHtml(r.album)}` : ''}${flags.length ? ` · ${flags.join(', ')}` : ''}
+        </p>
+      </div>
+      <span class="text-sm font-mono tabular-nums shrink-0 ${durClass}">${dur ? fmt(dur) : '—'}</span>
+    `;
+    lyricsSearchResults.appendChild(li);
+  }
+}
+
+lyricsSearchResults.addEventListener('click', async e => {
+  const li = e.target.closest('li[data-id]');
+  if (!li || !currentJobId) return;
+  const lrclibId = parseInt(li.dataset.id, 10);
+  if (!isFinite(lrclibId)) return;
+
+  // visual feedback
+  li.classList.add('opacity-60', 'pointer-events-none');
+
+  try {
+    const r = await fetch(`/api/lyrics/${currentJobId}/select`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lrclib_id: lrclibId }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+
+    if (!data.found || (!data.lines?.length && !data.plain)) {
+      li.classList.remove('opacity-60', 'pointer-events-none');
+      return;
+    }
+    lyrics = {
+      found: true,
+      hasSynced: !!(data.lines && data.lines.length),
+      lines: data.lines || [],
+      plain: data.plain || '',
+      title: data.title || '',
+      artist: data.artist || '',
+      instrumental: !!data.instrumental,
+    };
+    lyricsTitle.textContent = lyrics.title;
+    lyricsArtist.textContent = lyrics.artist;
+    show(lyricsHeader);
+    hide(lyricsEmpty); hide(lyricsLoading); hide(lyricsNone);
+    renderLyrics();
+    show(lyricsContent);
+    lyricsContent.scrollTop = 0;
+    updateActiveLyric(playing ? currentTime() : startOffset);
+    closeLyricsDialog();
+  } catch (_) {
+    li.classList.remove('opacity-60', 'pointer-events-none');
+  }
+});
+
 // --- theme toggle ----------------------------------------------------------
 
 const themeToggle = $('theme-toggle');

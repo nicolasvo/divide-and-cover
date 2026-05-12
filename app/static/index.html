@@ -116,11 +116,11 @@
       user-select: none;
     }
 
-    dialog#search-dialog::backdrop {
+    dialog::backdrop {
       background: rgba(15, 14, 12, 0.55);
       backdrop-filter: blur(2px);
     }
-    dialog#search-dialog {
+    dialog.app-dialog {
       padding: 0;
       border: 0;
       max-width: min(720px, calc(100vw - 32px));
@@ -240,7 +240,13 @@
 
     <aside id="lyrics-pane"
       class="order-3 lg:order-3 hidden mt-10 lg:mt-0 lg:flex lg:flex-col lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-12rem)]">
-        <h3 class="flex-none text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">lyrics</h3>
+        <div class="flex-none flex items-center justify-between mb-3">
+          <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
+          <button id="open-lyrics-search" type="button" title="search lyrics" aria-label="search lyrics"
+            class="w-7 h-7 -my-1 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center">
+            <span class="material-symbols-outlined" style="font-size:18px">search</span>
+          </button>
+        </div>
         <header id="lyrics-header" class="hidden flex-none px-2 pb-3">
           <p id="lyrics-title" class="text-lg italic truncate"></p>
           <p id="lyrics-artist" class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 truncate"></p>
@@ -279,7 +285,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 
-  <dialog id="search-dialog" class="bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+  <dialog id="search-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
     <div class="flex flex-col max-h-[calc(100vh-64px)]">
       <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
         <h2 class="text-xl italic">search youtube</h2>
@@ -312,6 +318,33 @@
           class="hidden mt-3 w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-800 hover:border-claude/70 hover:text-claude transition">
           load more
         </button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="lyrics-dialog" class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif">
+    <div class="flex flex-col max-h-[calc(100vh-64px)]">
+      <header class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800">
+        <h2 class="text-xl italic">search lyrics</h2>
+        <button id="lyrics-dialog-close" type="button" aria-label="close"
+          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center">
+          <span class="material-symbols-outlined" style="font-size:20px">close</span>
+        </button>
+      </header>
+
+      <form id="lyrics-search-form" class="flex gap-2 px-5 py-4">
+        <input id="lyrics-search-q" type="search" autocomplete="off" placeholder="artist - title"
+          class="flex-1 h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition">
+        <button type="submit" id="lyrics-search-submit" aria-label="search"
+          class="h-11 w-11 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 flex items-center justify-center transition shrink-0">
+          <span class="material-symbols-outlined" style="font-size:22px">search</span>
+        </button>
+      </form>
+
+      <div class="flex-1 overflow-y-auto px-5 pb-5">
+        <ul id="lyrics-search-results" class="grid gap-2 list-none p-0"></ul>
+        <p id="lyrics-search-empty" class="hidden mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results.</p>
+        <p id="lyrics-search-hint" class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">type a query and press enter.</p>
       </div>
     </div>
   </dialog>

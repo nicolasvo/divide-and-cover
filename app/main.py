@@ -395,6 +395,16 @@ def _lrclib_search(query: str) -> list[dict]:
         return json.loads(resp.read().decode())
 
 
+def _lrclib_get(lrclib_id: int) -> dict:
+    url = f"{LRCLIB_BASE}/get/{lrclib_id}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": LRC_USER_AGENT, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
 @app.get("/api/lyrics/{job_id}")
 async def get_lyrics(job_id: str, q: str | None = None, refresh: bool = False) -> dict:
     d = _track_dir(job_id)
@@ -450,6 +460,78 @@ async def get_lyrics(job_id: str, q: str | None = None, refresh: bool = False) -
         "plain": best.get("plainLyrics") or "",
         "query": query,
     }
+    try:
+        cache.write_text(json.dumps(result))
+    except OSError:
+        pass
+    return result
+
+
+@app.get("/api/lyrics-search")
+async def lyrics_search(q: str) -> dict:
+    query = q.strip()
+    if not query:
+        return {"results": []}
+
+    def search() -> dict | list:
+        try:
+            return _lrclib_search(query)
+        except Exception as e:
+            return {"error": str(e)[:200]}
+
+    hits = await asyncio.get_event_loop().run_in_executor(None, search)
+    if isinstance(hits, dict) and "error" in hits:
+        return {"results": [], "error": hits["error"]}
+
+    return {
+        "results": [
+            {
+                "id": h.get("id"),
+                "title": h.get("trackName"),
+                "artist": h.get("artistName"),
+                "album": h.get("albumName"),
+                "duration": h.get("duration"),
+                "instrumental": bool(h.get("instrumental")),
+                "has_sync": bool(h.get("syncedLyrics")),
+                "has_plain": bool(h.get("plainLyrics")),
+            }
+            for h in (hits or [])[:50]
+        ]
+    }
+
+
+class LyricsSelect(BaseModel):
+    lrclib_id: int
+
+
+@app.post("/api/lyrics/{job_id}/select")
+async def lyrics_select(job_id: str, payload: LyricsSelect) -> dict:
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "track not found")
+
+    def fetch() -> dict:
+        try:
+            return _lrclib_get(payload.lrclib_id)
+        except Exception as e:
+            return {"error": str(e)[:200]}
+
+    record = await asyncio.get_event_loop().run_in_executor(None, fetch)
+    if "error" in record:
+        return {"found": False, "reason": record["error"]}
+
+    result = {
+        "found": True,
+        "title": record.get("trackName"),
+        "artist": record.get("artistName"),
+        "album": record.get("albumName"),
+        "duration": record.get("duration"),
+        "instrumental": bool(record.get("instrumental")),
+        "lines": _parse_lrc(record.get("syncedLyrics") or ""),
+        "plain": record.get("plainLyrics") or "",
+        "query": f"id:{payload.lrclib_id}",
+    }
+    cache = d / "lyrics.json"
     try:
         cache.write_text(json.dumps(result))
     except OSError:
