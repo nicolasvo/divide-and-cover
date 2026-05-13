@@ -1,0 +1,27 @@
+.git
+.gitignore
+.dockerignore
+README.md
+LICENSE
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-version
+
+# editor / tooling
+.vscode/
+.idea/
+.DS_Store
+.claude/
+
+# host-local artifacts not needed in the prod image
+tracks/
+frontend/
+modal_app.py
+
+# secrets — Modal creds come in via env_file at runtime, not baked in
+.env
+.env.*

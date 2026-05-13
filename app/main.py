@@ -14,13 +14,11 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 ROOT = Path(__file__).parent
-STATIC = ROOT / "static"
-TRACKS = ROOT.parent / "tracks"
+TRACKS = Path(os.environ.get("DAC_TRACKS_DIR", str(ROOT.parent / "tracks")))
 TRACKS.mkdir(parents=True, exist_ok=True)
 
 STEMS = ("vocals", "drums", "bass", "other")
@@ -29,6 +27,16 @@ MODEL = "htdemucs"
 DEMUCS_PCT_RE = re.compile(rb"(\d+)%\|")
 YT_PCT_RE = re.compile(rb"(\d+(?:\.\d+)?)%")
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,15}$")
+
+# DAC_USE_MODAL=1 → offload demucs to the modal serverless GPU function
+# defined in `modal_app.py`; otherwise run demucs locally as a subprocess.
+USE_MODAL = os.environ.get("DAC_USE_MODAL") == "1"
+
+if USE_MODAL:
+    import modal
+    modal_separate = modal.Function.from_name("divide-and-cover", "separate")
+else:
+    modal_separate = None
 
 LRCLIB_BASE = "https://lrclib.net/api"
 LRC_USER_AGENT = "divide-and-cover/0.1 (+https://github.com/)"
@@ -41,7 +49,6 @@ LRC_NOISE_RE = re.compile(
 )
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 def _track_dir(job_id: str) -> Path:
@@ -54,15 +61,82 @@ def _ndjson(event: dict) -> bytes:
     return (json.dumps(event) + "\n").encode()
 
 
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return (STATIC / "index.html").read_text()
-
-
 # --- demucs streaming ------------------------------------------------------
 
-async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
-    """Run demucs on `src`, persist stems to TRACKS/{job_id}, yield NDJSON events."""
+def _done_event(job_id: str, name: str) -> bytes:
+    return _ndjson({
+        "event": "done",
+        "job_id": job_id,
+        "name": name,
+        "stems": {s: f"/api/stem/{job_id}/{s}" for s in STEMS},
+    })
+
+
+def _write_meta(final: Path, name: str, extra: dict | None = None) -> None:
+    meta: dict = {"name": name, "created_at": time.time()}
+    if extra:
+        meta.update(extra)
+    (final / "meta.json").write_text(json.dumps(meta))
+
+
+def _find_track_by_video_id(video_id: str) -> dict | None:
+    for d in TRACKS.iterdir():
+        if not d.is_dir():
+            continue
+        meta_file = d / "meta.json"
+        if not meta_file.exists():
+            continue
+        try:
+            meta = json.loads(meta_file.read_text())
+        except json.JSONDecodeError:
+            continue
+        if meta.get("video_id") == video_id:
+            return {"job_id": d.name, "name": meta.get("name", d.name)}
+    return None
+
+
+async def _stream_separation_modal(src: Path, job_id: str, name: str, extra_meta: dict | None = None) -> AsyncIterator[bytes]:
+    """Offload demucs to the modal `divide-and-cover/separate` function."""
+    yield _ndjson({"event": "stage", "stage": "starting", "message": "uploading to gpu…"})
+
+    audio_bytes = src.read_bytes()
+    suffix = src.suffix or ".wav"
+
+    yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on modal…"})
+
+    stems: dict | None = None
+    try:
+        async for evt in modal_separate.remote_gen.aio(audio_bytes, suffix):
+            kind = evt.get("event")
+            if kind == "progress":
+                yield _ndjson(evt)
+            elif kind == "done":
+                stems = evt.get("stems")
+                break
+    except Exception as e:
+        yield _ndjson({"event": "error", "message": f"modal: {str(e)[:240]}"})
+        return
+
+    if not stems:
+        yield _ndjson({"event": "error", "message": "modal: no stems returned"})
+        return
+
+    yield _ndjson({"event": "stage", "stage": "saving", "message": "saving stems…"})
+
+    final = TRACKS / job_id
+    final.mkdir(parents=True)
+    for stem in STEMS:
+        data = stems.get(stem)
+        if not data:
+            yield _ndjson({"event": "error", "message": f"missing stem {stem}"})
+            return
+        (final / f"{stem}.mp3").write_bytes(data)
+    _write_meta(final, name, extra_meta)
+    yield _done_event(job_id, name)
+
+
+async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name: str, extra_meta: dict | None = None) -> AsyncIterator[bytes]:
+    """Run demucs as a local subprocess, parse stdout for progress, persist stems."""
     cmd = [
         sys.executable, "-u", "-m", "demucs",
         "--mp3", "-n", MODEL,
@@ -128,16 +202,8 @@ async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) 
         final.mkdir(parents=True)
         for stem in STEMS:
             shutil.move(str(produced / f"{stem}.mp3"), str(final / f"{stem}.mp3"))
-        (final / "meta.json").write_text(
-            json.dumps({"name": name, "created_at": time.time()})
-        )
-
-        yield _ndjson({
-            "event": "done",
-            "job_id": job_id,
-            "name": name,
-            "stems": {s: f"/api/stem/{job_id}/{s}" for s in STEMS},
-        })
+        _write_meta(final, name, extra_meta)
+        yield _done_event(job_id, name)
     finally:
         if proc.returncode is None:
             proc.terminate()
@@ -145,6 +211,15 @@ async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) 
                 await asyncio.wait_for(proc.wait(), timeout=5)
             except asyncio.TimeoutError:
                 proc.kill()
+
+
+async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str, extra_meta: dict | None = None) -> AsyncIterator[bytes]:
+    if USE_MODAL:
+        async for chunk in _stream_separation_modal(src, job_id, name, extra_meta):
+            yield chunk
+    else:
+        async for chunk in _stream_separation_local(src, work_out, job_id, name, extra_meta):
+            yield chunk
 
 
 # --- file upload + separate ------------------------------------------------
@@ -227,6 +302,13 @@ async def separate_youtube(payload: YoutubeJob):
         raise HTTPException(400, "bad video id")
     video_id = payload.video_id
     name = (payload.name or video_id).strip() or video_id
+
+    existing = _find_track_by_video_id(video_id)
+    if existing:
+        async def already_have():
+            yield _done_event(existing["job_id"], existing["name"])
+        return StreamingResponse(already_have(), media_type="application/x-ndjson")
+
     job_id = uuid.uuid4().hex[:12]
 
     work = Path(tempfile.mkdtemp(prefix="yt-"))
@@ -308,7 +390,7 @@ async def separate_youtube(payload: YoutubeJob):
                 yield _ndjson({"event": "error", "message": "audio file not produced"})
                 return
 
-            async for chunk in _stream_separation(downloaded, out, job_id, name):
+            async for chunk in _stream_separation(downloaded, out, job_id, name, extra_meta={"video_id": video_id}):
                 yield chunk
         finally:
             shutil.rmtree(work, ignore_errors=True)
@@ -335,6 +417,7 @@ def list_tracks() -> dict:
             "job_id": p.name,
             "name": meta.get("name", p.name),
             "created_at": meta.get("created_at", 0),
+            "video_id": meta.get("video_id"),
         })
     items.sort(key=lambda x: -x["created_at"])
     return {"tracks": items}
@@ -347,6 +430,28 @@ def delete_track(job_id: str) -> dict:
         raise HTTPException(404, "not found")
     shutil.rmtree(d)
     return {"ok": True}
+
+
+class TrackRename(BaseModel):
+    name: str
+
+
+@app.post("/api/tracks/{job_id}/rename")
+def rename_track(job_id: str, payload: TrackRename) -> dict:
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "not found")
+    name = re.sub(r"\s+", " ", payload.name).strip()
+    if not name:
+        raise HTTPException(400, "empty name")
+    meta_file = d / "meta.json"
+    try:
+        meta = json.loads(meta_file.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        meta = {}
+    meta["name"] = name
+    meta_file.write_text(json.dumps(meta))
+    return {"ok": True, "name": name}
 
 
 @app.get("/api/stem/{job_id}/{stem}")
