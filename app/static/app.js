@@ -1025,9 +1025,16 @@ function closeSearchDialog() {
   searchDialog.close();
 }
 
+let searchYtResults = [];
+let searchYtLoading = false;
+let searchYtError = '';
+
 function resetSearch() {
   searchState = { q: '', offset: 0, hasMore: false };
   searchInput.value = '';
+  searchYtResults = [];
+  searchYtLoading = false;
+  searchYtError = '';
   searchResults.innerHTML = '';
   hide(searchEmpty);
   hide(loadMoreBtn);
@@ -1050,16 +1057,24 @@ searchDialog.addEventListener('click', e => {
   if (e.target === searchDialog) closeSearchDialog();
 });
 
-searchInput.addEventListener('input', toggleClearVisibility);
+searchInput.addEventListener('input', () => {
+  toggleClearVisibility();
+  // changing the query invalidates the YT search; library matches refresh live
+  searchYtResults = [];
+  searchYtError = '';
+  searchState = { q: '', offset: 0, hasMore: false };
+  hide(loadMoreBtn);
+  refreshSearchDialog();
+});
 
 clearSearchBtn.addEventListener('click', () => {
   searchState = { q: '', offset: 0, hasMore: false };
   searchInput.value = '';
-  searchResults.innerHTML = '';
-  hide(searchEmpty);
+  searchYtResults = [];
+  searchYtError = '';
   hide(loadMoreBtn);
-  show(searchHint);
   toggleClearVisibility();
+  refreshSearchDialog();
   searchInput.focus();
 });
 
@@ -1068,10 +1083,8 @@ searchForm.addEventListener('submit', async e => {
   const q = searchInput.value.trim();
   if (!q || searching) return;
   searchState = { q, offset: 0, hasMore: false };
-  searchResults.innerHTML = '';
-  hide(searchEmpty);
+  searchYtError = '';
   hide(loadMoreBtn);
-  hide(searchHint);
   await fetchSearchPage(true);
 });
 
@@ -1082,15 +1095,14 @@ async function fetchSearchPage(isFirstPage) {
   searching = true;
   setSearchBusy(true);
 
-  let placeholder;
   if (isFirstPage) {
-    searchResults.innerHTML = `<li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2"><span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>searching…</li>`;
+    searchYtResults = [];
+    searchYtLoading = true;
+    refreshSearchDialog();
   } else {
     hide(loadMoreBtn);
-    placeholder = document.createElement('li');
-    placeholder.className = 'flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2';
-    placeholder.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>loading more…`;
-    searchResults.appendChild(placeholder);
+    searchYtLoading = true;
+    refreshSearchDialog();
   }
 
   try {
@@ -1098,21 +1110,17 @@ async function fetchSearchPage(isFirstPage) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
-    if (placeholder) placeholder.remove();
-    appendResults(data.results || [], isFirstPage);
-    searchState.offset += (data.results || []).length;
+    const newResults = data.results || [];
+    searchYtResults = isFirstPage ? newResults : [...searchYtResults, ...newResults];
+    searchState.offset += newResults.length;
     searchState.hasMore = !!data.has_more;
+    searchYtLoading = false;
+    refreshSearchDialog();
     if (searchState.hasMore) show(loadMoreBtn); else hide(loadMoreBtn);
   } catch (err) {
-    if (placeholder) placeholder.remove();
-    if (isFirstPage) {
-      searchResults.innerHTML = `<li class="text-sm text-red-400 px-2 py-2">search failed: ${escapeHtml(String(err).slice(0, 200))}</li>`;
-    } else {
-      const li = document.createElement('li');
-      li.className = 'text-sm text-red-400 px-2 py-2';
-      li.textContent = `load more failed: ${String(err).slice(0, 200)}`;
-      searchResults.appendChild(li);
-    }
+    searchYtLoading = false;
+    searchYtError = String(err).slice(0, 200);
+    refreshSearchDialog();
     hide(loadMoreBtn);
   } finally {
     searching = false;
@@ -1127,38 +1135,107 @@ function setSearchBusy(busy) {
   searchBtn.classList.toggle('cursor-wait', busy);
 }
 
-function appendResults(results, isFirstPage) {
-  if (isFirstPage) searchResults.innerHTML = '';
-  if (isFirstPage && !results.length) {
-    show(searchEmpty);
+function _libraryHitLi(t) {
+  const li = document.createElement('li');
+  li.className = 'flex gap-3 p-2 bg-white dark:bg-paper-800 border border-claude/40 rounded-lg hover:border-claude cursor-pointer transition group';
+  li.dataset.jobId = t.job_id;
+  li.dataset.name = t.name;
+  li.innerHTML = `
+    <div class="w-32 aspect-video flex items-center justify-center rounded bg-claude/10 shrink-0">
+      <span class="material-symbols-outlined text-claude" style="font-size:28px">library_music</span>
+    </div>
+    <div class="flex-1 min-w-0 flex flex-col justify-center">
+      <p class="text-sm leading-snug line-clamp-2 group-hover:text-claude transition">${escapeHtml(t.name)}</p>
+      <p class="mt-1 text-xs text-claude font-medium uppercase tracking-[0.15em]">in library</p>
+    </div>
+  `;
+  return li;
+}
+
+function _youtubeHitLi(r) {
+  const li = document.createElement('li');
+  li.className = 'flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group';
+  li.dataset.id = r.id;
+  li.dataset.name = r.title;
+  li.innerHTML = `
+    <img src="${escapeAttr(r.thumbnail)}" alt="" loading="lazy"
+      class="w-32 aspect-video object-cover rounded bg-stone-200 dark:bg-stone-700 shrink-0">
+    <div class="flex-1 min-w-0 flex flex-col justify-center">
+      <p class="text-sm leading-snug line-clamp-2 group-hover:text-claude transition">${escapeHtml(r.title)}</p>
+      <p class="mt-1 text-xs text-stone-500 dark:text-stone-400 truncate">
+        ${escapeHtml(r.channel || '')}${r.duration ? ` · <span class="font-mono tabular-nums">${fmt(r.duration)}</span>` : ''}
+      </p>
+    </div>
+  `;
+  return li;
+}
+
+function refreshSearchDialog() {
+  const q = searchInput.value.trim();
+  const ql = q.toLowerCase();
+  searchResults.innerHTML = '';
+
+  if (!q && !searchYtLoading && !searchYtResults.length && !searchYtError) {
+    show(searchHint);
+    hide(searchEmpty);
     return;
   }
-  hide(searchEmpty);
-  for (const r of results) {
+  hide(searchHint);
+
+  const rendered = new Set();
+  // 1. library matches by title (live as user types)
+  if (ql) {
+    for (const t of libraryTracks) {
+      if ((t.name || '').toLowerCase().includes(ql)) {
+        searchResults.appendChild(_libraryHitLi(t));
+        rendered.add(t.job_id);
+      }
+    }
+  }
+  // 2. YT results — replace ones that are already in the library by video_id
+  const byVideoId = new Map(
+    libraryTracks.filter(t => t.video_id).map(t => [t.video_id, t])
+  );
+  for (const r of searchYtResults) {
+    const libMatch = byVideoId.get(r.id);
+    if (libMatch) {
+      if (!rendered.has(libMatch.job_id)) {
+        searchResults.appendChild(_libraryHitLi(libMatch));
+        rendered.add(libMatch.job_id);
+      }
+    } else {
+      searchResults.appendChild(_youtubeHitLi(r));
+    }
+  }
+
+  if (searchYtLoading) {
     const li = document.createElement('li');
-    li.className = 'flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group';
-    li.dataset.id = r.id;
-    li.dataset.name = r.title;
-    li.innerHTML = `
-      <img src="${escapeAttr(r.thumbnail)}" alt="" loading="lazy"
-        class="w-32 aspect-video object-cover rounded bg-stone-200 dark:bg-stone-700 shrink-0">
-      <div class="flex-1 min-w-0 flex flex-col justify-center">
-        <p class="text-sm leading-snug line-clamp-2 group-hover:text-claude transition">${escapeHtml(r.title)}</p>
-        <p class="mt-1 text-xs text-stone-500 dark:text-stone-400 truncate">
-          ${escapeHtml(r.channel || '')}${r.duration ? ` · <span class="font-mono tabular-nums">${fmt(r.duration)}</span>` : ''}
-        </p>
-      </div>
-    `;
+    li.className = 'flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2';
+    li.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span>${searchResults.children.length ? 'searching youtube…' : 'searching…'}`;
     searchResults.appendChild(li);
+  } else if (searchYtError) {
+    const li = document.createElement('li');
+    li.className = 'text-sm text-red-400 px-2 py-2';
+    li.textContent = `search failed: ${searchYtError}`;
+    searchResults.appendChild(li);
+  }
+
+  if (!searchResults.children.length) {
+    show(searchEmpty);
+  } else {
+    hide(searchEmpty);
   }
 }
 
 searchResults.addEventListener('click', e => {
-  const li = e.target.closest('li[data-id]');
+  const li = e.target.closest('li[data-job-id], li[data-id]');
   if (!li) return;
-  const item = { id: li.dataset.id, title: li.dataset.name };
   closeSearchDialog();
-  startYoutubeSeparation(item);
+  if (li.dataset.jobId) {
+    loadFromLibrary({ job_id: li.dataset.jobId, name: li.dataset.name });
+  } else if (li.dataset.id) {
+    startYoutubeSeparation({ id: li.dataset.id, title: li.dataset.name });
+  }
 });
 
 async function startYoutubeSeparation(item) {

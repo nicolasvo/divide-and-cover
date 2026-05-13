@@ -80,7 +80,30 @@ def _done_event(job_id: str, name: str) -> bytes:
     })
 
 
-async def _stream_separation_modal(src: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
+def _write_meta(final: Path, name: str, extra: dict | None = None) -> None:
+    meta: dict = {"name": name, "created_at": time.time()}
+    if extra:
+        meta.update(extra)
+    (final / "meta.json").write_text(json.dumps(meta))
+
+
+def _find_track_by_video_id(video_id: str) -> dict | None:
+    for d in TRACKS.iterdir():
+        if not d.is_dir():
+            continue
+        meta_file = d / "meta.json"
+        if not meta_file.exists():
+            continue
+        try:
+            meta = json.loads(meta_file.read_text())
+        except json.JSONDecodeError:
+            continue
+        if meta.get("video_id") == video_id:
+            return {"job_id": d.name, "name": meta.get("name", d.name)}
+    return None
+
+
+async def _stream_separation_modal(src: Path, job_id: str, name: str, extra_meta: dict | None = None) -> AsyncIterator[bytes]:
     """Offload demucs to the modal `divide-and-cover/separate` function."""
     yield _ndjson({"event": "stage", "stage": "starting", "message": "uploading to gpu…"})
 
@@ -105,13 +128,11 @@ async def _stream_separation_modal(src: Path, job_id: str, name: str) -> AsyncIt
             yield _ndjson({"event": "error", "message": f"missing stem {stem}"})
             return
         (final / f"{stem}.mp3").write_bytes(data)
-    (final / "meta.json").write_text(
-        json.dumps({"name": name, "created_at": time.time()})
-    )
+    _write_meta(final, name, extra_meta)
     yield _done_event(job_id, name)
 
 
-async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
+async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name: str, extra_meta: dict | None = None) -> AsyncIterator[bytes]:
     """Run demucs as a local subprocess, parse stdout for progress, persist stems."""
     cmd = [
         sys.executable, "-u", "-m", "demucs",
@@ -178,9 +199,7 @@ async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name:
         final.mkdir(parents=True)
         for stem in STEMS:
             shutil.move(str(produced / f"{stem}.mp3"), str(final / f"{stem}.mp3"))
-        (final / "meta.json").write_text(
-            json.dumps({"name": name, "created_at": time.time()})
-        )
+        _write_meta(final, name, extra_meta)
         yield _done_event(job_id, name)
     finally:
         if proc.returncode is None:
@@ -191,12 +210,12 @@ async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name:
                 proc.kill()
 
 
-async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
+async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str, extra_meta: dict | None = None) -> AsyncIterator[bytes]:
     if USE_MODAL:
-        async for chunk in _stream_separation_modal(src, job_id, name):
+        async for chunk in _stream_separation_modal(src, job_id, name, extra_meta):
             yield chunk
     else:
-        async for chunk in _stream_separation_local(src, work_out, job_id, name):
+        async for chunk in _stream_separation_local(src, work_out, job_id, name, extra_meta):
             yield chunk
 
 
@@ -280,6 +299,13 @@ async def separate_youtube(payload: YoutubeJob):
         raise HTTPException(400, "bad video id")
     video_id = payload.video_id
     name = (payload.name or video_id).strip() or video_id
+
+    existing = _find_track_by_video_id(video_id)
+    if existing:
+        async def already_have():
+            yield _done_event(existing["job_id"], existing["name"])
+        return StreamingResponse(already_have(), media_type="application/x-ndjson")
+
     job_id = uuid.uuid4().hex[:12]
 
     work = Path(tempfile.mkdtemp(prefix="yt-"))
@@ -361,7 +387,7 @@ async def separate_youtube(payload: YoutubeJob):
                 yield _ndjson({"event": "error", "message": "audio file not produced"})
                 return
 
-            async for chunk in _stream_separation(downloaded, out, job_id, name):
+            async for chunk in _stream_separation(downloaded, out, job_id, name, extra_meta={"video_id": video_id}):
                 yield chunk
         finally:
             shutil.rmtree(work, ignore_errors=True)
@@ -388,6 +414,7 @@ def list_tracks() -> dict:
             "job_id": p.name,
             "name": meta.get("name", p.name),
             "created_at": meta.get("created_at", 0),
+            "video_id": meta.get("video_id"),
         })
     items.sort(key=lambda x: -x["created_at"])
     return {"tracks": items}
