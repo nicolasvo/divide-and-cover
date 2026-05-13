@@ -291,6 +291,39 @@ async def search(q: str, limit: int = 10, offset: int = 0) -> dict:
     return {"results": items, "has_more": has_more, "offset": offset}
 
 
+@app.get("/api/video/{video_id}")
+async def video_info(video_id: str) -> dict:
+    """Metadata for a single video — used when the user pastes a YouTube URL/ID."""
+    if not VIDEO_ID_RE.match(video_id):
+        raise HTTPException(400, "bad video id")
+
+    def do_lookup() -> dict | None:
+        from yt_dlp import YoutubeDL
+        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        try:
+            with YoutubeDL(opts) as ydl:
+                return ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={video_id}",
+                    download=False,
+                )
+        except Exception:
+            return None
+
+    info = await asyncio.get_event_loop().run_in_executor(None, do_lookup)
+    if not info or not info.get("id"):
+        raise HTTPException(404, "video not found")
+
+    vid = info["id"]
+    return {
+        "id": vid,
+        "title": info.get("title") or vid,
+        "channel": info.get("channel") or info.get("uploader") or "",
+        "duration": info.get("duration"),
+        "thumbnail": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg",
+        "url": f"https://www.youtube.com/watch?v={vid}",
+    }
+
+
 class YoutubeJob(BaseModel):
     video_id: str
     name: str | None = None

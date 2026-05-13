@@ -122,6 +122,12 @@ export async function ytSearch(
   return r.json();
 }
 
+export async function fetchVideoInfo(videoId: string): Promise<YTHit> {
+  const r = await fetch(`/api/video/${encodeURIComponent(videoId)}`);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 export async function fetchLyrics(
   jobId: string,
   opts: { q?: string; refresh?: boolean } = {}

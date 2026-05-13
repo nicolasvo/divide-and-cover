@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '$lib/state.svelte';
   import { fmtTime } from '$lib/format';
-  import { ytSearch, type YTHit } from '$lib/api';
+  import { ytSearch, fetchVideoInfo, type YTHit } from '$lib/api';
 
   type Props = {
     open: boolean;
@@ -13,6 +13,29 @@
 
   const PAGE = 10;
   const DUR_TOL = 0.5;
+
+  // Recognize a bare 11-char video ID (typical YouTube ID) or any common URL form.
+  const YT_BARE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+  const YT_URL_RE =
+    /(?:youtube\.com\/(?:watch\?(?:[^&\s]*&)*v=|shorts\/|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i;
+  // Matches anything that *starts* with a YouTube host — used to spot
+  // truncated/malformed URLs that don't extract a valid id, so we can show a
+  // friendly error instead of running it through yt-dlp as a text search.
+  const YT_URLISH_RE = /^\s*(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\b/i;
+
+  function extractVideoId(text: string): string | null {
+    const t = text.trim();
+    if (!t) return null;
+    if (YT_BARE_ID_RE.test(t)) return t;
+    const m = t.match(YT_URL_RE);
+    return m ? m[1] : null;
+  }
+
+  function looksLikeYouTubeUrl(text: string): boolean {
+    return YT_URLISH_RE.test(text);
+  }
+
+  let videoLookupSeq = 0;
 
   let dialog: HTMLDialogElement | null = $state(null);
   let q = $state(''); // current input value (live)
@@ -55,8 +78,34 @@
     // typing doesn't touch results / offset / hasMore — those belong to
     // `activeQuery` (the last submitted search). Library matches refresh
     // live via $derived. The load-more button stays valid against the
-    // previous search until a new submit replaces it.
+    // previous search until a new submit replaces it. URL lookups only fire
+    // on explicit submit (Enter or search button) — see onSubmit.
     errMsg = '';
+  }
+
+  async function lookupVideo(id: string) {
+    const seq = ++videoLookupSeq;
+    // clear any prior results so the spinner stands alone
+    results = [];
+    offset = 0;
+    hasMore = false;
+    activeQuery = '';
+    loading = true;
+    loadingMore = false;
+    try {
+      const info = await fetchVideoInfo(id);
+      if (seq !== videoLookupSeq) return; // a newer lookup superseded us
+      results = [info];
+      offset = 0;
+      hasMore = false;
+      activeQuery = ''; // load-more doesn't apply to a single-video lookup
+      errMsg = '';
+    } catch {
+      if (seq !== videoLookupSeq) return;
+      errMsg = "couldn't find that video — check the url";
+    } finally {
+      if (seq === videoLookupSeq) loading = false;
+    }
   }
 
   function clearQuery() {
@@ -93,6 +142,11 @@
       query = q.trim();
       if (!query) return;
       activeQuery = query;
+      // clear prior results so the spinner stands alone — only on a fresh
+      // search; load-more obviously keeps the existing list to append to.
+      results = [];
+      offset = 0;
+      hasMore = false;
       pageOffset = 0;
     } else {
       if (!activeQuery) return;
@@ -121,7 +175,21 @@
 
   function onSubmit(e: Event) {
     e.preventDefault();
-    fetchPage(true);
+    const id = extractVideoId(q);
+    if (id) {
+      void lookupVideo(id);
+      return;
+    }
+    if (looksLikeYouTubeUrl(q)) {
+      // partial/truncated URL — don't send to yt-dlp as a text search
+      results = [];
+      offset = 0;
+      hasMore = false;
+      activeQuery = '';
+      errMsg = 'that url looks incomplete — paste the full youtube link';
+      return;
+    }
+    void fetchPage(true);
   }
 
   const trimmedQ = $derived(q.trim().toLowerCase());
@@ -227,14 +295,27 @@
     </form>
 
     <div class="flex-1 overflow-y-auto px-5 pb-5">
-      {#if !trimmedQ && !loading && !results.length && !errMsg}
-        <p class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">
-          type a query and press enter
-        </p>
-      {:else if totalShown === 0 && !loading && !errMsg}
-        <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
+      {#if totalShown === 0 && !loading && !errMsg}
+        {#if activeQuery}
+          <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">
+            no results
+          </p>
+        {:else}
+          <p class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">
+            type a query and press enter
+          </p>
+        {/if}
       {:else}
         <ul class="grid gap-2 list-none p-0">
+          {#if loading && !loadingMore}
+            <li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2">
+              <span
+                class="material-symbols-outlined"
+                style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span
+              >
+              {totalShown ? 'searching youtube…' : 'searching…'}
+            </li>
+          {/if}
           {#each libraryHits as t (t.job_id)}
             <li>
               <button
@@ -310,13 +391,13 @@
               </button>
             </li>
           {/each}
-          {#if loading}
+          {#if loading && loadingMore}
             <li class="flex items-center gap-2 text-sm text-stone-500 italic px-2 py-2">
               <span
                 class="material-symbols-outlined"
                 style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span
               >
-              {loadingMore ? 'loading more songs…' : totalShown ? 'searching youtube…' : 'searching…'}
+              loading more songs…
             </li>
           {:else if errMsg}
             <li class="text-sm text-red-400 px-2 py-2">search failed: {errMsg}</li>
