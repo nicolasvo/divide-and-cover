@@ -23,6 +23,11 @@ help:
 	@echo "  make prod-down    stop the production stack"
 	@echo "  make prod-logs    tail production api logs"
 	@echo ""
+	@echo "SSH tunnel (for yt-dlp proxy):"
+	@echo "  make tunnel-start   start the SSH tunnel to Raspberry Pi"
+	@echo "  make tunnel-stop    stop the SSH tunnel"
+	@echo "  make tunnel-status  check if tunnel is running"
+	@echo ""
 	@echo "Other:"
 	@echo "  make modal-deploy   deploy the Modal serverless function from modal_app.py"
 
@@ -57,15 +62,15 @@ build-frontend:
 # --- production ---------------------------------------------------------
 
 .PHONY: prod
-prod: build-frontend
+prod: build-frontend tunnel-start
 	docker compose -f $(PROD_COMPOSE) up -d --build api
 
 .PHONY: prod-restart
-prod-restart:
+prod-restart: tunnel-start
 	docker compose -f $(PROD_COMPOSE) up -d --build api
 
 .PHONY: prod-down
-prod-down:
+prod-down: tunnel-stop
 	docker compose -f $(PROD_COMPOSE) down
 
 .PHONY: prod-logs
@@ -77,3 +82,21 @@ prod-logs:
 .PHONY: modal-deploy
 modal-deploy:
 	uv run --env-file .env modal deploy modal_app.py
+
+# --- ssh tunnel ---------------------------------------------------------------
+
+include .env
+
+.PHONY: tunnel-start
+tunnel-start:
+	@ps aux | grep -q "ssh.*1080" && echo "Tunnel already running" || \
+		ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+		-D 0.0.0.0:1080 -f -N $(SSH_PROXY_USER)@$(SSH_PROXY_HOST)
+
+.PHONY: tunnel-stop
+tunnel-stop:
+	@pkill -f "ssh.*1080" || true
+
+.PHONY: tunnel-status
+tunnel-status:
+	@ps aux | grep "ssh.*1080" | grep -v grep || echo "Tunnel not running"

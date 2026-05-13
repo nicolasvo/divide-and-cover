@@ -326,13 +326,17 @@ async def separate_youtube(payload: YoutubeJob):
                 "-o", str(work / "input.%(ext)s"),
                 "--no-playlist",
                 "--newline",
-                url,
+                "--verbose",
             ]
+            if proxy := os.getenv("YT_DLP_PROXY"):
+                cmd.extend(["--proxy", proxy])
+            cmd.append(url)
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
+            last_logs: list[str] = []
             try:
                 last_pct = -1
                 buf = b""
@@ -353,6 +357,9 @@ async def separate_youtube(payload: YoutubeJob):
                         text = line.decode(errors="replace").strip()
                         if not text:
                             continue
+                        last_logs.append(text)
+                        if len(last_logs) > 20:
+                            last_logs.pop(0)
                         if text.startswith("[download]"):
                             m = YT_PCT_RE.search(line)
                             if m:
@@ -382,7 +389,8 @@ async def separate_youtube(payload: YoutubeJob):
                         proc.kill()
 
             if rc != 0:
-                yield _ndjson({"event": "error", "message": f"yt-dlp exited {rc}"})
+                error_detail = "\n".join(last_logs[-5:]) if last_logs else f"exit code {rc}"
+                yield _ndjson({"event": "error", "message": f"yt-dlp failed: {error_detail}"})
                 return
 
             downloaded = next((p for p in work.iterdir() if p.is_file() and p.name.startswith("input.")), None)

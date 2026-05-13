@@ -4,9 +4,12 @@ services:
     container_name: divide-and-cover-api
     restart: unless-stopped
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DAC_USE_MODAL: "1"
       DAC_TRACKS_DIR: /data/tracks
+      YT_DLP_PROXY: socks5://host.docker.internal:1080
     volumes:
       - dac_tracks:/data/tracks
     networks:
