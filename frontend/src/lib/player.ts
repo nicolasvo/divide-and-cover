@@ -1,5 +1,10 @@
-// Web Audio engine — N independent stem buffers playing in lockstep with per-stem gain/mute.
-// Ported from app/static/app.js (lines 191-396). Framework-agnostic; components subscribe via callbacks.
+// Web Audio engine — N independent stem buffers playing in lockstep with
+// per-stem gain/mute. Pitch shift is OFFLINE: when the user commits a new
+// pitch, we re-render all stems through Rubber Band (with formant
+// preservation) into fresh AudioBuffers, then swap them in. No realtime
+// pitch filter in the graph.
+
+import { shiftBuffer } from './pitchShift';
 
 export const STEMS = ['vocals', 'drums', 'bass', 'other'] as const;
 export type Stem = (typeof STEMS)[number];
@@ -10,15 +15,23 @@ export type PlayerSnapshot = {
   duration: number;
   muted: Record<Stem, boolean>;
   volumes: Record<Stem, number>;
+  pitch: number;
+  pitchProcessing: boolean;
 };
 
 export class StemPlayer {
   private ctx: AudioContext | null = null;
-  private buffers: Partial<Record<Stem, AudioBuffer>> = {};
+  // originals are the un-shifted decoded MP3s; play is what's actually
+  // wired to BufferSources. They're identical at pitch=0, diverge otherwise.
+  private originals: Partial<Record<Stem, AudioBuffer>> = {};
+  private play_: Partial<Record<Stem, AudioBuffer>> = {};
   private gains: Partial<Record<Stem, GainNode>> = {};
   private sources: Partial<Record<Stem, AudioBufferSourceNode>> = {};
   private muted: Record<Stem, boolean> = { vocals: false, drums: false, bass: false, other: false };
   private volumes: Record<Stem, number> = { vocals: 1, drums: 1, bass: 1, other: 1 };
+  private pitch = 0;
+  private pitchProcessing = false;
+  private pitchInflightToken = 0; // ratchets on every commit; lets in-flight runs cancel themselves
 
   private playing = false;
   private startCtxTime = 0;
@@ -26,22 +39,17 @@ export class StemPlayer {
   private duration = 0;
   private rafId: number | null = null;
 
-  // listener invoked every animation frame while playing, plus once on every state change
   onUpdate: (snap: PlayerSnapshot) => void = () => {};
   onEnded: () => void = () => {};
 
-  /**
-   * Decode all stems and prepare gain nodes. Resets prior state.
-   * @param onProgress called with 0..100 as the download progresses.
-   *   Sums bytes received across all four parallel fetches.
-   */
   async load(
     stemUrls: Record<Stem, string>,
     onProgress?: (percent: number) => void
   ): Promise<void> {
     this.stopRaf();
     this.detachSources();
-    this.buffers = {};
+    this.originals = {};
+    this.play_ = {};
     this.gains = {};
 
     if (!this.ctx) {
@@ -51,6 +59,7 @@ export class StemPlayer {
       this.ctx = new Ctor();
     }
     const ctx = this.ctx;
+    if (ctx.state === 'suspended') await ctx.resume();
 
     const received: Record<Stem, number> = { vocals: 0, drums: 0, bass: 0, other: 0 };
     const total: Record<Stem, number> = { vocals: 0, drums: 0, bass: 0, other: 0 };
@@ -84,7 +93,6 @@ export class StemPlayer {
           report();
         }
 
-        // concat into a single ArrayBuffer for decodeAudioData
         const merged = new Uint8Array(got);
         let off = 0;
         for (const c of chunks) {
@@ -96,11 +104,11 @@ export class StemPlayer {
       })
     );
 
-    // ensure final 100% even if a content-length header was missing
     if (onProgress) onProgress(100);
 
     for (const [s, buf] of decoded) {
-      this.buffers[s] = buf;
+      this.originals[s] = buf;
+      this.play_[s] = buf;
       const g = ctx.createGain();
       g.gain.value = this.muted[s] ? 0 : this.volumes[s];
       g.connect(ctx.destination);
@@ -110,6 +118,8 @@ export class StemPlayer {
     this.duration = decoded[0][1].duration;
     this.startOffset = 0;
     this.playing = false;
+    this.pitch = 0;
+    this.pitchProcessing = false;
     this.emit();
   }
 
@@ -121,7 +131,7 @@ export class StemPlayer {
     this.startCtxTime = when;
 
     for (const s of STEMS) {
-      const buf = this.buffers[s];
+      const buf = this.play_[s];
       const gain = this.gains[s];
       if (!buf || !gain) continue;
       const src = this.ctx.createBufferSource();
@@ -176,6 +186,68 @@ export class StemPlayer {
     this.emit();
   }
 
+  /** Update the displayed pitch value without re-rendering. Used for live
+   *  slider feedback while the user is dragging. */
+  setPitchPreview(semitones: number): void {
+    this.pitch = semitones;
+    this.emit();
+  }
+
+  /** Commit a pitch value: pause, render all stems through Rubber Band with
+   *  formant preservation, swap buffers, and resume from the same position. */
+  async commitPitch(semitones: number): Promise<void> {
+    if (!this.ctx) return;
+    this.pitch = semitones;
+    const myToken = ++this.pitchInflightToken;
+
+    const wasPlaying = this.playing;
+    const resumeAt = this.getTime();
+    this.pause();
+
+    if (semitones === 0) {
+      // shortcut: nothing to render — point play_ at originals
+      for (const s of STEMS) {
+        const o = this.originals[s];
+        if (o) this.play_[s] = o;
+      }
+      this.startOffset = Math.min(resumeAt, this.duration);
+      this.pitchProcessing = false;
+      this.emit();
+      if (wasPlaying) this.play();
+      return;
+    }
+
+    this.pitchProcessing = true;
+    this.emit();
+
+    try {
+      const ctx = this.ctx;
+      const shifted = await Promise.all(
+        STEMS.map(async (s) => {
+          const orig = this.originals[s];
+          if (!orig) return [s, null] as const;
+          const buf = await shiftBuffer(orig, semitones, ctx);
+          return [s, buf] as const;
+        })
+      );
+      if (myToken !== this.pitchInflightToken) return; // superseded by a newer commit
+      for (const [s, buf] of shifted) {
+        if (buf) this.play_[s] = buf;
+      }
+      this.startOffset = Math.min(resumeAt, this.duration);
+    } finally {
+      if (myToken === this.pitchInflightToken) {
+        this.pitchProcessing = false;
+        this.emit();
+        if (wasPlaying) this.play();
+      }
+    }
+  }
+
+  getPitch(): number {
+    return this.pitch;
+  }
+
   getTime(): number {
     if (!this.playing || !this.ctx) return this.startOffset;
     return this.startOffset + (this.ctx.currentTime - this.startCtxTime);
@@ -189,15 +261,17 @@ export class StemPlayer {
     return this.playing;
   }
 
-  /** Tear down all per-track state. Keep the AudioContext for reuse. */
   reset(): void {
     this.pause();
-    this.buffers = {};
+    this.originals = {};
+    this.play_ = {};
     this.gains = {};
     this.duration = 0;
     this.startOffset = 0;
     this.muted = { vocals: false, drums: false, bass: false, other: false };
     this.volumes = { vocals: 1, drums: 1, bass: 1, other: 1 };
+    this.pitch = 0;
+    this.pitchProcessing = false;
     this.emit();
   }
 
@@ -207,7 +281,9 @@ export class StemPlayer {
       currentTime: this.getTime(),
       duration: this.duration,
       muted: { ...this.muted },
-      volumes: { ...this.volumes }
+      volumes: { ...this.volumes },
+      pitch: this.pitch,
+      pitchProcessing: this.pitchProcessing
     };
   }
 

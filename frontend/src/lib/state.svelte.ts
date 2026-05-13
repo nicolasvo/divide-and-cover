@@ -10,7 +10,9 @@ class AppState {
     currentTime: 0,
     duration: 0,
     muted: { vocals: false, drums: false, bass: false, other: false },
-    volumes: { vocals: 1, drums: 1, bass: 1, other: 1 }
+    volumes: { vocals: 1, drums: 1, bass: 1, other: 1 },
+    pitch: 0,
+    pitchProcessing: false
   });
 
   currentTrack = $state<{ jobId: string; name: string } | null>(null);
