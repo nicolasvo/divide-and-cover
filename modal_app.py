@@ -57,7 +57,8 @@ def separate(audio: bytes, suffix: str = ".wav"):
 
         proc = subprocess.Popen(
             [sys.executable, "-u", "-m", "demucs",
-             "--mp3", "-n", MODEL, "-o", str(out), str(src)],
+             "--mp3", "--mp3-bitrate", "192",
+             "-n", MODEL, "-o", str(out), str(src)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=0,

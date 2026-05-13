@@ -67,7 +67,7 @@
     }
     if (!done) return fail('no result from server');
 
-    app.status = { stage: 'loading', percent: 100, message: 'decoding tracks…' };
+    app.status = { stage: 'loading', percent: 0, message: 'decoding tracks…' };
     await loadPlayer(done.job_id, done.name, done.stems);
     refreshLibrary();
   }
@@ -79,7 +79,9 @@
   ): Promise<void> {
     app.view = 'status';
     try {
-      await engine.load(stemUrls);
+      await engine.load(stemUrls, (pct) => {
+        app.status = { ...app.status, percent: pct };
+      });
     } catch (e) {
       return fail(`load failed: ${e}`);
     }
@@ -109,9 +111,11 @@
   async function loadFromLibrary(jobId: string, name: string) {
     engine.pause();
     app.view = 'status';
-    app.status = { stage: 'loading', percent: 100, message: name };
+    app.status = { stage: 'loading', percent: 0, message: name };
     try {
-      await engine.load(stemUrlsFor(jobId));
+      await engine.load(stemUrlsFor(jobId), (pct) => {
+        app.status = { ...app.status, percent: pct };
+      });
       app.currentTrack = { jobId, name };
       app.view = 'player';
     } catch (e) {

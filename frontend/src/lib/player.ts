@@ -30,8 +30,15 @@ export class StemPlayer {
   onUpdate: (snap: PlayerSnapshot) => void = () => {};
   onEnded: () => void = () => {};
 
-  /** Decode all stems and prepare gain nodes. Resets prior state. */
-  async load(stemUrls: Record<Stem, string>): Promise<void> {
+  /**
+   * Decode all stems and prepare gain nodes. Resets prior state.
+   * @param onProgress called with 0..100 as the download progresses.
+   *   Sums bytes received across all four parallel fetches.
+   */
+  async load(
+    stemUrls: Record<Stem, string>,
+    onProgress?: (percent: number) => void
+  ): Promise<void> {
     this.stopRaf();
     this.detachSources();
     this.buffers = {};
@@ -45,14 +52,52 @@ export class StemPlayer {
     }
     const ctx = this.ctx;
 
+    const received: Record<Stem, number> = { vocals: 0, drums: 0, bass: 0, other: 0 };
+    const total: Record<Stem, number> = { vocals: 0, drums: 0, bass: 0, other: 0 };
+    const report = () => {
+      if (!onProgress) return;
+      let r = 0;
+      let t = 0;
+      for (const k of STEMS) {
+        r += received[k];
+        t += total[k];
+      }
+      if (t > 0) onProgress(Math.min(100, (r / t) * 100));
+    };
+
     const decoded = await Promise.all(
       STEMS.map(async (s): Promise<[Stem, AudioBuffer]> => {
         const res = await fetch(stemUrls[s]);
-        const ab = await res.arrayBuffer();
-        const buf = await ctx.decodeAudioData(ab);
+        if (!res.ok || !res.body) throw new Error(`fetch ${s}: ${res.status}`);
+        const len = Number(res.headers.get('content-length')) || 0;
+        total[s] = len;
+
+        const reader = res.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let got = 0;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          got += value.length;
+          received[s] = got;
+          report();
+        }
+
+        // concat into a single ArrayBuffer for decodeAudioData
+        const merged = new Uint8Array(got);
+        let off = 0;
+        for (const c of chunks) {
+          merged.set(c, off);
+          off += c.length;
+        }
+        const buf = await ctx.decodeAudioData(merged.buffer);
         return [s, buf];
       })
     );
+
+    // ensure final 100% even if a content-length header was missing
+    if (onProgress) onProgress(100);
 
     for (const [s, buf] of decoded) {
       this.buffers[s] = buf;

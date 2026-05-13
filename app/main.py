@@ -139,7 +139,8 @@ async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name:
     """Run demucs as a local subprocess, parse stdout for progress, persist stems."""
     cmd = [
         sys.executable, "-u", "-m", "demucs",
-        "--mp3", "-n", MODEL,
+        "--mp3", "--mp3-bitrate", "192",
+        "-n", MODEL,
         "-o", str(work_out),
         str(src),
     ]
