@@ -2,10 +2,9 @@
 
 Drop a song, get four stems. Web UI on top of [demucs](https://github.com/adefossez/demucs).
 
-<p align="center">
-  <img src="screenshots/1.png" width="50%" />
-  <img src="screenshots/2.png" width="50%" />
-</p>
+| | |
+|---|---|
+| ![](screenshots/1.png) | ![](screenshots/2.png) |
 
 ## Run
 
@@ -46,7 +45,8 @@ DAC_USE_MODAL=1 uv run --env-file .env uvicorn app.main:app --host 127.0.0.1 --p
 Drop the `DAC_USE_MODAL=1` prefix to fall back to local demucs.
 
 Warm Modal splits take ~15–25 s; the first one of a session pays ~30 s of
-cold start. The free $30/month credit covers thousands of songs.
+cold start. The free $30/month credit covers thousands of songs. See
+[MODAL.md](MODAL.md) for how the integration actually works.
 
 ## Player
 

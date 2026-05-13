@@ -2,10 +2,12 @@
 Modal deployment for the demucs separator.
 
 Deploy once:
-    uv run modal deploy modal_app.py
+    uv run --env-file .env modal deploy modal_app.py
 
 The FastAPI server in `app/main.py` then calls the named function
-`divide-and-cover/separate` over the network for each split.
+`divide-and-cover/separate` over the network for each split. It is a
+generator: yields {"event": "progress", ...} as demucs reports stdout,
+then a final {"event": "done", "stems": {...}}.
 """
 import modal
 
@@ -31,12 +33,20 @@ MODEL = "htdemucs"
     timeout=600,
     scaledown_window=60,
 )
-def separate(audio: bytes, suffix: str = ".wav") -> dict[str, bytes]:
-    """Run demucs on `audio` bytes, return each stem as mp3 bytes."""
+def separate(audio: bytes, suffix: str = ".wav"):
+    """Run demucs on `audio` bytes, streaming progress events.
+
+    Yields:
+        {"event": "progress", "stage": "separate", "percent": int}
+        {"event": "done", "stems": {stem_name: mp3_bytes}}
+    """
+    import re
     import subprocess
     import sys
     import tempfile
     from pathlib import Path
+
+    pct_re = re.compile(rb"(\d+)%\|")
 
     with tempfile.TemporaryDirectory() as work_str:
         work = Path(work_str)
@@ -45,15 +55,46 @@ def separate(audio: bytes, suffix: str = ".wav") -> dict[str, bytes]:
         out = work / "out"
         out.mkdir()
 
-        result = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, "-u", "-m", "demucs",
              "--mp3", "-n", MODEL, "-o", str(out), str(src)],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+            env={"PYTHONUNBUFFERED": "1"},
         )
-        if result.returncode != 0:
-            tail = (result.stderr or result.stdout or "").strip()[-500:]
-            raise RuntimeError(f"demucs failed: {tail}")
+
+        stage = "separate"  # demucs weights are pre-cached, so we go straight here
+        last_pct = -1
+        buf = b""
+        assert proc.stdout is not None
+        try:
+            while True:
+                chunk = proc.stdout.read(512)
+                if not chunk:
+                    break
+                buf += chunk
+                while True:
+                    cuts = [j for j in (buf.find(b"\r"), buf.find(b"\n")) if j != -1]
+                    if not cuts:
+                        break
+                    i = min(cuts)
+                    line, buf = buf[:i], buf[i + 1:]
+                    if not line:
+                        continue
+                    m = pct_re.search(line)
+                    if m:
+                        pct = int(m.group(1))
+                        if pct != last_pct:
+                            last_pct = pct
+                            yield {"event": "progress", "stage": stage, "percent": pct}
+        finally:
+            rc = proc.wait()
+
+        if rc != 0:
+            tail = buf.decode(errors="replace")[-500:]
+            raise RuntimeError(f"demucs failed (rc={rc}): {tail}")
 
         produced = out / MODEL / src.stem
-        return {s: (produced / f"{s}.mp3").read_bytes() for s in STEMS}
+        stems = {s: (produced / f"{s}.mp3").read_bytes() for s in STEMS}
+        yield {"event": "done", "stems": stems}

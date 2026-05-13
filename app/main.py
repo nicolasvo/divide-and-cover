@@ -104,10 +104,21 @@ async def _stream_separation_modal(src: Path, job_id: str, name: str, extra_meta
 
     yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on modal…"})
 
+    stems: dict | None = None
     try:
-        stems = await modal_separate.remote.aio(audio_bytes, suffix)
+        async for evt in modal_separate.remote_gen.aio(audio_bytes, suffix):
+            kind = evt.get("event")
+            if kind == "progress":
+                yield _ndjson(evt)
+            elif kind == "done":
+                stems = evt.get("stems")
+                break
     except Exception as e:
         yield _ndjson({"event": "error", "message": f"modal: {str(e)[:240]}"})
+        return
+
+    if not stems:
+        yield _ndjson({"event": "error", "message": "modal: no stems returned"})
         return
 
     yield _ndjson({"event": "stage", "stage": "saving", "message": "saving stems…"})
