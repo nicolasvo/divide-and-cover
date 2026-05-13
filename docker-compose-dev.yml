@@ -17,6 +17,7 @@ services:
     command:
       - uv
       - run
+      - --no-sync
       - uvicorn
       - app.main:app
       - --host
