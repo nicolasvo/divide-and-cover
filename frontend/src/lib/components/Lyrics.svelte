@@ -307,34 +307,45 @@
   bind:this={paneEl}
   class="order-3 flex flex-col mt-14 lg:mt-0 lg:h-[calc(100vh-12rem)] lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:relative"
 >
-  <div class="flex-none flex items-center justify-between mb-3">
+  <div class="flex-none flex items-start justify-between mb-3">
     <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
     {#if app.currentTrack}
-      <div class="flex items-center gap-1">
-        {#if app.player.playing && lyrics.hasSynced}
+      <div class="flex flex-col items-end gap-0.5">
+        <div class="flex items-center gap-1">
+          {#if app.player.playing && lyrics.hasSynced}
+            <button
+              type="button"
+              title={syncing
+                ? 'cancel — or click the line you hear right now'
+                : 'tap, then click the line currently being sung to re-time lyrics'}
+              aria-label={syncing ? 'cancel lyrics sync' : 'sync lyrics to playback'}
+              onclick={() => (syncing = !syncing)}
+              class="w-7 h-7 -my-1 rounded-full transition flex items-center justify-center {syncing
+                ? 'text-claude bg-claude/10'
+                : 'text-stone-500 hover:text-claude'}"
+            >
+              <span class="material-symbols-outlined" style="font-size:18px">center_focus_weak</span
+              >
+            </button>
+          {/if}
           <button
             type="button"
-            title={syncing
-              ? 'cancel — or click the line you hear right now'
-              : 'tap, then click the line currently being sung to re-time lyrics'}
-            aria-label={syncing ? 'cancel lyrics sync' : 'sync lyrics to playback'}
-            onclick={() => (syncing = !syncing)}
-            class="w-7 h-7 -my-1 rounded-full transition flex items-center justify-center {syncing
-              ? 'text-claude bg-claude/10'
-              : 'text-stone-500 hover:text-claude'}"
+            title="search for different lyrics for this song"
+            aria-label="search for different lyrics for this song"
+            onclick={() => (dialogOpen = true)}
+            class="w-7 h-7 -my-1 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center"
           >
-            <span class="material-symbols-outlined" style="font-size:18px">center_focus_weak</span>
+            <span class="material-symbols-outlined" style="font-size:18px">search</span>
           </button>
+        </div>
+        {#if offset !== 0 && lyrics.hasSynced}
+          <p
+            class="text-xs font-mono tabular-nums text-stone-500 dark:text-stone-400"
+            title="lyrics offset relative to playback"
+          >
+            offset {offset > 0 ? '+' : ''}{offset.toFixed(2)}s
+          </p>
         {/if}
-        <button
-          type="button"
-          title="search for different lyrics for this song"
-          aria-label="search for different lyrics for this song"
-          onclick={() => (dialogOpen = true)}
-          class="w-7 h-7 -my-1 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center"
-        >
-          <span class="material-symbols-outlined" style="font-size:18px">search</span>
-        </button>
       </div>
     {/if}
   </div>
