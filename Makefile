@@ -5,11 +5,15 @@
 DEV_COMPOSE := docker-compose-dev.yml
 PROD_COMPOSE := docker-compose.yml
 
-# Central Caddy lives in a sibling repo and serves the SPA via a bind mount.
+# Per-machine paths and SSH host are read from `.env` (included below):
+#   CADDY_DIR      — path to the central Caddy repo (used by caddy-up/down/logs)
+#   SSH_PROD_HOST  — SSH alias for the production box (used by sync-prod)
+#   PROD_DIR       — path of this repo on the production box (used by sync-prod)
+#
+# Note on CADDY_DIR: the central Caddy serves the SPA via a bind mount.
 # `npm run build` recreates frontend/build/, giving it a fresh inode, which
 # leaves Caddy's bind mount pointing at the deleted dir — so a frontend
 # rebuild is followed by force-recreating the Caddy container.
-CADDY_DIR ?= /home/caddy-hetzner-nico
 
 .PHONY: help
 help:
@@ -41,6 +45,9 @@ help:
 	@echo ""
 	@echo "Other:"
 	@echo "  make modal-deploy   deploy the Modal serverless function from modal_app.py"
+
+sync-prod:
+	ssh -t $(SSH_PROD_HOST) "cd $(PROD_DIR) && git pull origin master && make prod"
 
 # --- dev ----------------------------------------------------------------
 
