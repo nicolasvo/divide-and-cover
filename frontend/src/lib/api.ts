@@ -28,6 +28,8 @@ export type YTHit = {
 export type LyricsResult = {
   found: boolean;
   reason?: string;
+  /** lrclib id of the matched record — used to highlight "current" in the search dialog */
+  id?: number;
   title?: string;
   artist?: string;
   album?: string;
@@ -36,6 +38,8 @@ export type LyricsResult = {
   lines?: { t: number; text: string }[];
   plain?: string;
   query?: string;
+  /** seconds added to every line.t when matching against playback time */
+  offset?: number;
 };
 
 export type LyricsSearchHit = {
@@ -156,4 +160,13 @@ export async function selectLyrics(jobId: string, lrclibId: number): Promise<Lyr
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}
+
+export async function saveLyricsOffset(jobId: string, offset: number): Promise<void> {
+  const r = await fetch(`/api/lyrics/${jobId}/offset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ offset })
+  });
+  if (!r.ok) throw new Error(await r.text());
 }

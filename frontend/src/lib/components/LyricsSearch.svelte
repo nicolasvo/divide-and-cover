@@ -6,10 +6,11 @@
     open: boolean;
     seed: string;
     trackDuration: number;
+    currentId: number | null;
     onClose: () => void;
     onPick: (hit: LyricsSearchHit) => void;
   };
-  let { open, seed, trackDuration, onClose, onPick }: Props = $props();
+  let { open, seed, trackDuration, currentId, onClose, onPick }: Props = $props();
 
   const DUR_TOL = 0.5;
 
@@ -142,10 +143,13 @@
           {#each results as r (r.id)}
             {@const matches = durationMatches(r)}
             {@const flags = flagsFor(r)}
+            {@const isCurrent = currentId === r.id}
             <li>
               <button
                 onclick={() => onPick(r)}
-                class="w-full flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group text-left"
+                class="w-full flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border rounded-lg cursor-pointer transition group text-left {isCurrent
+                  ? 'border-claude/60 hover:border-claude'
+                  : 'border-stone-200 dark:border-stone-800 hover:border-claude/60'}"
               >
                 <div class="flex-1 min-w-0">
                   <p class="text-sm leading-snug truncate group-hover:text-claude transition">
@@ -154,7 +158,9 @@
                   <p class="mt-0.5 text-xs text-stone-500 dark:text-stone-400 truncate">
                     {r.artist ?? ''}{r.album ? ` · ${r.album}` : ''}{flags.length
                       ? ` · ${flags.join(', ')}`
-                      : ''}
+                      : ''}{isCurrent ? ' · ' : ''}{#if isCurrent}<span
+                        class="text-claude font-medium uppercase tracking-[0.15em]">current</span
+                      >{/if}
                   </p>
                 </div>
                 <span

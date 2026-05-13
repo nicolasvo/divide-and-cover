@@ -654,6 +654,7 @@ async def get_lyrics(job_id: str, q: str | None = None, refresh: bool = False) -
     best = hits[0]
     result = {
         "found": True,
+        "id": best.get("id"),
         "title": best.get("trackName"),
         "artist": best.get("artistName"),
         "album": best.get("albumName"),
@@ -725,6 +726,7 @@ async def lyrics_select(job_id: str, payload: LyricsSelect) -> dict:
 
     result = {
         "found": True,
+        "id": record.get("id"),
         "title": record.get("trackName"),
         "artist": record.get("artistName"),
         "album": record.get("albumName"),
@@ -740,3 +742,33 @@ async def lyrics_select(job_id: str, payload: LyricsSelect) -> dict:
     except OSError:
         pass
     return result
+
+
+class LyricsOffset(BaseModel):
+    offset: float
+
+
+@app.post("/api/lyrics/{job_id}/offset")
+async def lyrics_offset(job_id: str, payload: LyricsOffset) -> dict:
+    """Persist a per-track sync offset (seconds) into the cached lyrics.json.
+
+    The offset is added to every line's raw timestamp by the client when
+    displaying synced lyrics — used to correct drift between the lrclib
+    timing and the actual audio. Reset on the next refresh / select.
+    """
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "track not found")
+    cache = d / "lyrics.json"
+    if not cache.exists():
+        raise HTTPException(404, "no lyrics cached")
+    try:
+        data = json.loads(cache.read_text())
+    except json.JSONDecodeError:
+        raise HTTPException(500, "lyrics cache unreadable")
+    data["offset"] = float(payload.offset)
+    try:
+        cache.write_text(json.dumps(data))
+    except OSError:
+        raise HTTPException(500, "could not write lyrics cache")
+    return {"ok": True, "offset": data["offset"]}

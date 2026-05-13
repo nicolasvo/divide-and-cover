@@ -3,6 +3,7 @@
   import {
     fetchLyrics,
     selectLyrics,
+    saveLyricsOffset,
     type LyricsResult,
     type LyricsSearchHit
   } from '$lib/api';
@@ -17,6 +18,7 @@
     title: string;
     artist: string;
     instrumental: boolean;
+    id: number | null; // lrclib id of currently-displayed record
   };
 
   const EMPTY: LyricsState = {
@@ -26,7 +28,8 @@
     plain: '',
     title: '',
     artist: '',
-    instrumental: false
+    instrumental: false,
+    id: null
   };
 
   let lyrics = $state<LyricsState>(EMPTY);
@@ -35,6 +38,11 @@
   let activeIdx = $state(-1);
   let userScrolled = $state(false);
   let fetchSeq = 0;
+
+  // sync mode: user tells us "this line is what I'm hearing right now" so we
+  // can offset every timestamp. Persisted to lyrics.json on the backend.
+  let offset = $state(0);
+  let syncing = $state(false);
 
   // Mirrors `_clean_lyric_query` in app/main.py so the user sees the same
   // string the backend will send to lrclib while the fetch is in flight.
@@ -65,9 +73,17 @@
       activeIdx = -1;
       userScrolled = false;
       followBtnVisible = false;
+      offset = 0;
+      syncing = false;
       return;
     }
     void loadLyrics(tr.jobId, tr.name);
+  });
+
+  // exit sync mode if playback stops — capturing the offset only makes sense
+  // while a track is actually playing
+  $effect(() => {
+    if (!app.player.playing) syncing = false;
   });
 
   // track active line whenever player time changes
@@ -107,6 +123,8 @@
     const hasContent = data?.found && ((data.lines?.length ?? 0) > 0 || !!data.plain);
     if (!hasContent) {
       lyrics = { ...EMPTY, found: false };
+      offset = 0;
+      syncing = false;
       return;
     }
     lyrics = {
@@ -116,8 +134,11 @@
       plain: data.plain ?? '',
       title: data.title ?? fallbackName ?? '',
       artist: data.artist ?? '',
-      instrumental: !!data.instrumental
+      instrumental: !!data.instrumental,
+      id: data.id ?? null
     };
+    offset = data.offset ?? 0;
+    syncing = false;
     activeIdx = -1;
     userScrolled = false;
     if (contentEl) contentEl.scrollTop = 0;
@@ -127,12 +148,15 @@
 
   function updateActive(t: number) {
     if (!lyrics.hasSynced || !lyrics.lines.length) return;
+    // playback time `t` maps back to a raw line index by subtracting offset:
+    // a line at raw_t is "active" when t >= raw_t + offset  ⇔  raw_t <= t - offset
+    const adjusted = t - offset;
     let lo = 0,
       hi = lyrics.lines.length - 1,
       ans = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      if (lyrics.lines[mid].t <= t) {
+      if (lyrics.lines[mid].t <= adjusted) {
         ans = mid;
         lo = mid + 1;
       } else hi = mid - 1;
@@ -212,8 +236,29 @@
   }
 
   function onLineClick(line: LyricLine) {
-    engine.seekTo(line.t);
+    if (syncing && app.currentTrack) {
+      // user says "this line is what I'm hearing right now" — capture the gap
+      // between playback and the line's raw timestamp, persist, exit sync mode
+      const newOffset = app.player.currentTime - line.t;
+      offset = newOffset;
+      syncing = false;
+      const jobId = app.currentTrack.jobId;
+      void saveLyricsOffset(jobId, newOffset).catch(() => {});
+      // refresh the active highlight against the new offset
+      updateActive(app.player.currentTime);
+      return;
+    }
+    engine.seekTo(line.t + offset);
     if (!app.player.playing) engine.play();
+  }
+
+  function resetOffset() {
+    if (!app.currentTrack) return;
+    offset = 0;
+    syncing = false;
+    const jobId = app.currentTrack.jobId;
+    void saveLyricsOffset(jobId, 0).catch(() => {});
+    updateActive(app.player.currentTime);
   }
 
   async function onPickLyrics(hit: LyricsSearchHit) {
@@ -255,17 +300,50 @@
   <div class="flex-none flex items-center justify-between mb-3">
     <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
     {#if app.currentTrack}
-      <button
-        type="button"
-        title="search lyrics"
-        aria-label="search lyrics"
-        onclick={() => (dialogOpen = true)}
-        class="w-7 h-7 -my-1 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center"
-      >
-        <span class="material-symbols-outlined" style="font-size:18px">search</span>
-      </button>
+      <div class="flex items-center gap-1">
+        {#if app.player.playing && lyrics.hasSynced}
+          <button
+            type="button"
+            title={syncing
+              ? 'cancel — or click the line you hear right now'
+              : 'tap, then click the line currently being sung to re-time lyrics'}
+            aria-label={syncing ? 'cancel lyrics sync' : 'sync lyrics to playback'}
+            onclick={() => (syncing = !syncing)}
+            class="w-7 h-7 -my-1 rounded-full transition flex items-center justify-center {syncing
+              ? 'text-claude bg-claude/10'
+              : 'text-stone-500 hover:text-claude'}"
+          >
+            <span class="material-symbols-outlined" style="font-size:18px">center_focus_weak</span>
+          </button>
+        {/if}
+        <button
+          type="button"
+          title="search for different lyrics for this song"
+          aria-label="search for different lyrics for this song"
+          onclick={() => (dialogOpen = true)}
+          class="w-7 h-7 -my-1 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center"
+        >
+          <span class="material-symbols-outlined" style="font-size:18px">search</span>
+        </button>
+      </div>
     {/if}
   </div>
+  {#if syncing}
+    <div class="flex-none px-2 pb-2 text-center">
+      <p class="text-xs italic text-claude">
+        click the line you hear right now to re-align timestamps
+      </p>
+      {#if offset !== 0}
+        <button
+          type="button"
+          onclick={resetOffset}
+          class="mt-1 text-xs italic text-stone-500 hover:text-claude underline underline-offset-2 transition"
+        >
+          reset offset ({offset > 0 ? '+' : ''}{offset.toFixed(2)}s)
+        </button>
+      {/if}
+    </div>
+  {/if}
 
   {#if showContent}
     <header bind:this={headerEl} class="flex-none px-2 pb-3">
@@ -370,6 +448,19 @@
       follow
     </button>
   {/if}
+
+  {#if syncing}
+    <button
+      type="button"
+      onclick={() => (syncing = false)}
+      class="fixed left-1/2 -translate-x-1/2 z-30 lg:absolute lg:-translate-x-1/2 px-4 h-9 rounded-full bg-white dark:bg-paper-800 border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude text-sm font-medium shadow-lg flex items-center gap-1.5 transition {followBtnVisible
+        ? 'bottom-16'
+        : 'bottom-4'}"
+    >
+      <span class="material-symbols-outlined" style="font-size:18px">close</span>
+      cancel sync
+    </button>
+  {/if}
 </aside>
 {/if}
 
@@ -377,6 +468,7 @@
   open={dialogOpen}
   seed={app.currentTrack?.name || ''}
   trackDuration={app.player.duration}
+  currentId={lyrics.id}
   onClose={() => (dialogOpen = false)}
   onPick={onPickLyrics}
 />
