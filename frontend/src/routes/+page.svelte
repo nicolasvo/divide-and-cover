@@ -81,7 +81,6 @@
         app.status = { ...app.status, percent: pct };
       });
     } catch (e) {
-      console.error('engine.load failed:', e);
       return fail(`load failed: ${e}`);
     }
     app.currentTrack = { jobId, name };
@@ -118,7 +117,6 @@
       app.currentTrack = { jobId, name };
       app.view = 'player';
     } catch (e) {
-      console.error('engine.load failed:', e);
       fail(`load failed: ${e}`);
     }
   }

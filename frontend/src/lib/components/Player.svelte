@@ -4,7 +4,6 @@
   import { fmtTime } from '$lib/format';
   import { renameTrack } from '$lib/api';
   import StemControls from './StemControls.svelte';
-  import PitchDialog from './PitchDialog.svelte';
 
   type Props = { onSelectAnother: () => void };
   let { onSelectAnother }: Props = $props();
@@ -13,10 +12,7 @@
   const t = $derived(app.player.currentTime);
   const dur = $derived(app.player.duration);
   const playing = $derived(app.player.playing);
-  const pitch = $derived(app.player.pitch);
   const seekPct = $derived(dur ? (t / dur) * 100 : 0);
-
-  let pitchDialogOpen = $state(false);
 
   function onSeek(ev: Event) {
     engine.seekTo(parseFloat((ev.target as HTMLInputElement).value));
@@ -152,23 +148,6 @@
     </div>
   </div>
 
-  <div class="flex justify-center mb-4">
-    <button
-      type="button"
-      onclick={() => (pitchDialogOpen = true)}
-      title="change pitch (semitones)"
-      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition {pitch !==
-      0
-        ? 'border-claude/60 text-claude hover:bg-claude/10'
-        : 'border-stone-300 dark:border-stone-700 text-stone-500 hover:border-claude/70 hover:text-claude'}"
-    >
-      <span class="material-symbols-outlined" style="font-size:18px">tune</span>
-      <span class="tabular-nums font-mono">
-        {pitch === 0 ? 'pitch' : `${pitch > 0 ? '+' : ''}${pitch} st`}
-      </span>
-    </button>
-  </div>
-
   <StemControls />
 
   <button
@@ -178,5 +157,3 @@
     select another song
   </button>
 </section>
-
-<PitchDialog open={pitchDialogOpen} onClose={() => (pitchDialogOpen = false)} />
