@@ -15,11 +15,13 @@
   const DUR_TOL = 0.5;
 
   let dialog: HTMLDialogElement | null = $state(null);
-  let q = $state('');
+  let q = $state(''); // current input value (live)
+  let activeQuery = $state(''); // last submitted query — what load-more paginates against
   let results = $state<YTHit[]>([]);
   let offset = $state(0);
   let hasMore = $state(false);
   let loading = $state(false);
+  let loadingMore = $state(false);
   let errMsg = $state('');
   let inputEl: HTMLInputElement | null = $state(null);
 
@@ -36,10 +38,12 @@
 
   function reset() {
     q = '';
+    activeQuery = '';
     results = [];
     offset = 0;
     hasMore = false;
     loading = false;
+    loadingMore = false;
     errMsg = '';
   }
 
@@ -48,22 +52,62 @@
   }
 
   function onInput() {
-    // changing the query invalidates the YT search; library matches refresh live via $derived
+    // typing doesn't touch results / offset / hasMore — those belong to
+    // `activeQuery` (the last submitted search). Library matches refresh
+    // live via $derived. The load-more button stays valid against the
+    // previous search until a new submit replaces it.
+    errMsg = '';
+  }
+
+  function clearQuery() {
+    // explicit "start over" — wipe everything pagination-related
+    q = '';
+    activeQuery = '';
     results = [];
     offset = 0;
     hasMore = false;
     errMsg = '';
+    inputEl?.focus();
+  }
+
+  function dedupeById(arr: YTHit[]): YTHit[] {
+    // YouTube can return the same video twice within one page, and overlapping
+    // videos across paginated pages. Keep first occurrence so the rendered
+    // {#each ... (r.id)} block has unique keys.
+    const seen = new Set<string>();
+    const out: YTHit[] = [];
+    for (const r of arr) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id);
+        out.push(r);
+      }
+    }
+    return out;
   }
 
   async function fetchPage(isFirst: boolean) {
-    const query = q.trim();
-    if (!query || loading) return;
+    if (loading) return;
+    let query: string;
+    let pageOffset: number;
+    if (isFirst) {
+      query = q.trim();
+      if (!query) return;
+      activeQuery = query;
+      pageOffset = 0;
+    } else {
+      if (!activeQuery) return;
+      query = activeQuery;
+      pageOffset = offset;
+    }
     loading = true;
+    loadingMore = !isFirst;
     try {
-      const data = await ytSearch(query, PAGE, isFirst ? 0 : offset);
+      const data = await ytSearch(query, PAGE, pageOffset);
       const newResults = data.results ?? [];
-      results = isFirst ? newResults : [...results, ...newResults];
-      offset = (isFirst ? 0 : offset) + newResults.length;
+      results = isFirst ? dedupeById(newResults) : dedupeById([...results, ...newResults]);
+      // offset stays in YouTube-API space (count of consumed page rows), not
+      // displayed-row count — otherwise pagination drifts when dups are removed
+      offset = pageOffset + newResults.length;
       hasMore = !!data.has_more;
       errMsg = '';
     } catch (e) {
@@ -71,6 +115,7 @@
       hasMore = false;
     } finally {
       loading = false;
+      loadingMore = false;
     }
   }
 
@@ -162,11 +207,7 @@
           <button
             type="button"
             aria-label="clear"
-            onclick={() => {
-              q = '';
-              onInput();
-              inputEl?.focus();
-            }}
+            onclick={clearQuery}
             class="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full text-stone-500 hover:text-claude transition flex items-center justify-center"
           >
             <span class="material-symbols-outlined" style="font-size:18px">close</span>
@@ -275,7 +316,7 @@
                 class="material-symbols-outlined"
                 style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span
               >
-              {totalShown ? 'searching youtube…' : 'searching…'}
+              {loadingMore ? 'loading more songs…' : totalShown ? 'searching youtube…' : 'searching…'}
             </li>
           {:else if errMsg}
             <li class="text-sm text-red-400 px-2 py-2">search failed: {errMsg}</li>
