@@ -1,0 +1,33 @@
+services:
+  api:
+    build: .
+    container_name: divide-and-cover-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DAC_USE_MODAL: "1"
+      DAC_TRACKS_DIR: /data/tracks
+    volumes:
+      - dac_tracks:/data/tracks
+    networks:
+      - caddy-net
+
+  # one-shot builder for the SvelteKit frontend. Excluded from default `up` via profile.
+  # Invoked by `make build-frontend` → writes to ./frontend/build/ on the host,
+  # which the central Caddy at ~/zzz/caddy-hetzner-nico mounts as /srv/divide-and-cover.
+  frontend-builder:
+    image: node:22-bookworm-slim
+    profiles: ["build"]
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - dac_frontend_build_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run build"
+
+volumes:
+  dac_tracks:
+  dac_frontend_build_node_modules:
+
+networks:
+  caddy-net:
+    external: true

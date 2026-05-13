@@ -14,13 +14,11 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 ROOT = Path(__file__).parent
-STATIC = ROOT / "static"
-TRACKS = ROOT.parent / "tracks"
+TRACKS = Path(os.environ.get("DAC_TRACKS_DIR", str(ROOT.parent / "tracks")))
 TRACKS.mkdir(parents=True, exist_ok=True)
 
 STEMS = ("vocals", "drums", "bass", "other")
@@ -51,7 +49,6 @@ LRC_NOISE_RE = re.compile(
 )
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 def _track_dir(job_id: str) -> Path:
@@ -62,11 +59,6 @@ def _track_dir(job_id: str) -> Path:
 
 def _ndjson(event: dict) -> bytes:
     return (json.dumps(event) + "\n").encode()
-
-
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return (STATIC / "index.html").read_text()
 
 
 # --- demucs streaming ------------------------------------------------------
@@ -427,6 +419,28 @@ def delete_track(job_id: str) -> dict:
         raise HTTPException(404, "not found")
     shutil.rmtree(d)
     return {"ok": True}
+
+
+class TrackRename(BaseModel):
+    name: str
+
+
+@app.post("/api/tracks/{job_id}/rename")
+def rename_track(job_id: str, payload: TrackRename) -> dict:
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "not found")
+    name = re.sub(r"\s+", " ", payload.name).strip()
+    if not name:
+        raise HTTPException(400, "empty name")
+    meta_file = d / "meta.json"
+    try:
+        meta = json.loads(meta_file.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        meta = {}
+    meta["name"] = name
+    meta_file.write_text(json.dumps(meta))
+    return {"ok": True, "name": name}
 
 
 @app.get("/api/stem/{job_id}/{stem}")
