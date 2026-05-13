@@ -448,10 +448,10 @@
               </li>
             {/each}
             {#each ytSplit.fresh as r (r.id)}
-              <li>
+              <li class="flex gap-2 items-stretch">
                 <button
                   onclick={() => pickYT(r)}
-                  class="w-full flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group text-left"
+                  class="flex-1 min-w-0 flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group text-left"
                 >
                   <img
                     src={r.thumbnail}
@@ -472,6 +472,16 @@
                     </p>
                   </div>
                 </button>
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="preview on youtube"
+                  aria-label="preview on youtube"
+                  class="shrink-0 w-10 flex items-center justify-center rounded-lg border border-stone-200 dark:border-stone-800 text-stone-500 hover:text-claude hover:border-claude/60 transition"
+                >
+                  <span class="material-symbols-outlined" style="font-size:20px">open_in_new</span>
+                </a>
               </li>
             {/each}
             {#if loading && loadingMore}
