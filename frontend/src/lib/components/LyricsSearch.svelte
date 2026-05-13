@@ -7,14 +7,15 @@
     seed: string;
     trackDuration: number;
     onClose: () => void;
-    onPick: (lrclibId: number) => void;
+    onPick: (hit: LyricsSearchHit) => void;
   };
   let { open, seed, trackDuration, onClose, onPick }: Props = $props();
 
   const DUR_TOL = 0.5;
 
   let dialog: HTMLDialogElement | null = $state(null);
-  let q = $state('');
+  let q = $state(''); // live input value
+  let activeQuery = $state(''); // last submitted query — gates the "no results" message
   let results = $state<LyricsSearchHit[]>([]);
   let loading = $state(false);
   let errMsg = $state('');
@@ -24,6 +25,7 @@
     if (!dialog) return;
     if (open && !dialog.open) {
       q = seed;
+      activeQuery = '';
       results = [];
       errMsg = '';
       dialog.showModal();
@@ -40,6 +42,8 @@
     e.preventDefault();
     const query = q.trim();
     if (!query || loading) return;
+    activeQuery = query;
+    results = []; // clear before showing the spinner
     loading = true;
     errMsg = '';
     try {
@@ -114,7 +118,7 @@
     </form>
 
     <div class="flex-1 overflow-y-auto px-5 pb-5">
-      {#if !results.length && !loading && !errMsg}
+      {#if !activeQuery && !loading && !errMsg}
         <p class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">
           type a query and press enter
         </p>
@@ -140,7 +144,7 @@
             {@const flags = flagsFor(r)}
             <li>
               <button
-                onclick={() => onPick(r.id)}
+                onclick={() => onPick(r)}
                 class="w-full flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group text-left"
               >
                 <div class="flex-1 min-w-0">
@@ -165,7 +169,7 @@
           {/each}
         </ul>
       {/if}
-      {#if !results.length && !loading && !errMsg && q.trim()}
+      {#if activeQuery && !results.length && !loading && !errMsg}
         <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
       {/if}
     </div>

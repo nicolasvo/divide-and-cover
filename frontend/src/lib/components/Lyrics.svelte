@@ -1,6 +1,11 @@
 <script lang="ts">
   import { engine, app } from '$lib/state.svelte';
-  import { fetchLyrics, selectLyrics, type LyricsResult } from '$lib/api';
+  import {
+    fetchLyrics,
+    selectLyrics,
+    type LyricsResult,
+    type LyricsSearchHit
+  } from '$lib/api';
   import LyricsSearch from './LyricsSearch.svelte';
 
   type LyricLine = { t: number; text: string };
@@ -26,9 +31,22 @@
 
   let lyrics = $state<LyricsState>(EMPTY);
   let loading = $state(false);
+  let loadingQuery = $state(''); // cleaned query shown under the spinner
   let activeIdx = $state(-1);
   let userScrolled = $state(false);
   let fetchSeq = 0;
+
+  // Mirrors `_clean_lyric_query` in app/main.py so the user sees the same
+  // string the backend will send to lrclib while the fetch is in flight.
+  const LRC_NOISE_RE =
+    /\s*[\(\[](?:official[^)\]]*|audio|video|lyrics?|hd|hq|m\/?v|live|cover|remix|edit|feat\.?[^)\]]*|ft\.?[^)\]]*|prod\.?[^)\]]*|visualizer|with\s+lyrics?)[\)\]]\s*/gi;
+  function cleanLyricQuery(name: string): string {
+    return name
+      .replace(LRC_NOISE_RE, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[ \-–—|·•_]+|[ \-–—|·•_]+$/g, '')
+      .trim();
+  }
 
   let dialogOpen = $state(false);
   let contentEl: HTMLDivElement | null = $state(null);
@@ -70,6 +88,7 @@
   async function loadLyrics(jobId: string, fallbackName: string, opts: { refresh?: boolean } = {}) {
     const myId = ++fetchSeq;
     loading = true;
+    loadingQuery = cleanLyricQuery(fallbackName || '');
     activeIdx = -1;
     userScrolled = false;
     let data: LyricsResult;
@@ -80,6 +99,7 @@
     }
     if (myId !== fetchSeq || app.currentTrack?.jobId !== jobId) return;
     loading = false;
+    loadingQuery = '';
     applyLyrics(data, fallbackName);
   }
 
@@ -196,21 +216,23 @@
     if (!app.player.playing) engine.play();
   }
 
-  async function onPickLyrics(lrclibId: number) {
+  async function onPickLyrics(hit: LyricsSearchHit) {
     if (!app.currentTrack) return;
     const jobId = app.currentTrack.jobId;
     dialogOpen = false;
     loading = true;
+    loadingQuery = [hit.title, hit.artist].filter(Boolean).join(' — ');
     lyrics = EMPTY;
     activeIdx = -1;
     let data: LyricsResult;
     try {
-      data = await selectLyrics(jobId, lrclibId);
+      data = await selectLyrics(jobId, hit.id);
     } catch (e) {
       data = { found: false, reason: String(e) };
     }
     if (app.currentTrack?.jobId !== jobId) return;
     loading = false;
+    loadingQuery = '';
     applyLyrics(data, app.currentTrack.name);
   }
 
@@ -256,13 +278,20 @@
 
   {#if showLoading}
     <div class="flex-1 flex items-start justify-center">
-      <p class="flex items-center gap-2 text-stone-500 dark:text-stone-400 italic">
-        <span
-          class="material-symbols-outlined"
-          style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span
-        >
-        fetching lyrics…
-      </p>
+      <div class="flex flex-col items-center gap-1">
+        <p class="flex items-center gap-2 text-stone-500 dark:text-stone-400 italic">
+          <span
+            class="material-symbols-outlined"
+            style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span
+          >
+          fetching lyrics…
+        </p>
+        {#if loadingQuery}
+          <p class="text-xs text-stone-400 dark:text-stone-500 font-mono truncate max-w-full px-4">
+            {loadingQuery}
+          </p>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -346,7 +375,7 @@
 
 <LyricsSearch
   open={dialogOpen}
-  seed={lyrics.title || app.currentTrack?.name || ''}
+  seed={app.currentTrack?.name || ''}
   trackDuration={app.player.duration}
   onClose={() => (dialogOpen = false)}
   onPick={onPickLyrics}
