@@ -5,6 +5,12 @@
 DEV_COMPOSE := docker-compose-dev.yml
 PROD_COMPOSE := docker-compose.yml
 
+# Central Caddy lives in a sibling repo and serves the SPA via a bind mount.
+# `npm run build` recreates frontend/build/, giving it a fresh inode, which
+# leaves Caddy's bind mount pointing at the deleted dir — so a frontend
+# rebuild is followed by force-recreating the Caddy container.
+CADDY_DIR ?= /home/caddy-hetzner-nico
+
 .PHONY: help
 help:
 	@echo "Dev (one command — brings up backend AND frontend containers):"
@@ -18,10 +24,15 @@ help:
 	@echo "  make build-frontend   build frontend/build/ in a node container (no host node/npm needed)"
 	@echo ""
 	@echo "Production (joins caddy-net):"
-	@echo "  make prod         build frontend + bring up the api container (detached)"
+	@echo "  make prod         build frontend + restart api + force-recreate central Caddy"
 	@echo "  make prod-restart restart the api container without rebuilding the frontend"
 	@echo "  make prod-down    stop the production stack"
 	@echo "  make prod-logs    tail production api logs"
+	@echo ""
+	@echo "Central Caddy (sibling repo at $(CADDY_DIR)):"
+	@echo "  make caddy-up     force-recreate the Caddy container (picks up new bind mount inode)"
+	@echo "  make caddy-down   stop Caddy"
+	@echo "  make caddy-logs   tail Caddy logs"
 	@echo ""
 	@echo "SSH tunnel (for yt-dlp proxy):"
 	@echo "  make tunnel-start   start the SSH tunnel to Raspberry Pi"
@@ -62,7 +73,7 @@ build-frontend:
 # --- production ---------------------------------------------------------
 
 .PHONY: prod
-prod: build-frontend tunnel-start
+prod: build-frontend tunnel-start caddy-up
 	docker compose -f $(PROD_COMPOSE) up -d --build api
 
 .PHONY: prod-restart
@@ -76,6 +87,20 @@ prod-down: tunnel-stop
 .PHONY: prod-logs
 prod-logs:
 	docker compose -f $(PROD_COMPOSE) logs -f
+
+# --- central caddy ------------------------------------------------------
+
+.PHONY: caddy-up
+caddy-up:
+	cd $(CADDY_DIR) && docker compose up -d --force-recreate caddy
+
+.PHONY: caddy-down
+caddy-down:
+	cd $(CADDY_DIR) && docker compose down
+
+.PHONY: caddy-logs
+caddy-logs:
+	cd $(CADDY_DIR) && docker compose logs -f
 
 # --- modal --------------------------------------------------------------
 
