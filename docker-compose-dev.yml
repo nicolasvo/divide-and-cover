@@ -1,6 +1,9 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "1"
     container_name: dac-api-dev
     ports:
       - "127.0.0.1:8000:8000"

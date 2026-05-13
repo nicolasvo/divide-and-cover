@@ -4,12 +4,20 @@ version = "0.1.0"
 description = "Drop a song, get four stems."
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    "demucs>=4.0.1",
     "fastapi>=0.115",
     "modal>=0.64",
-    "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.20",
+    "uvicorn[standard]>=0.32",
     "yt-dlp>=2024.10",
+]
+
+[dependency-groups]
+# demucs (and its ~1 GB of torch deps) is only needed for the local-subprocess
+# separation path. Prod runs DAC_USE_MODAL=1 exclusively, so prod skips this
+# group via `uv sync --no-dev`. Dev images install it via the INSTALL_DEV=1
+# build arg in docker-compose-dev.yml.
+dev = [
+    "demucs>=4.0.1",
 ]
 
 [tool.uv]

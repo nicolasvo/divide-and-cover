@@ -244,7 +244,6 @@ name = "demucs-web"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "demucs" },
     { name = "fastapi" },
     { name = "modal" },
     { name = "python-multipart" },
@@ -252,15 +251,22 @@ dependencies = [
     { name = "yt-dlp" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "demucs" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "demucs", specifier = ">=4.0.1" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "modal", specifier = ">=0.64" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
     { name = "yt-dlp", specifier = ">=2024.10" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "demucs", specifier = ">=4.0.1" }]
 
 [[package]]
 name = "dora-search"
