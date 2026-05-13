@@ -356,12 +356,18 @@
         {:else}
           <ul class="grid gap-2 list-none p-0">
             {#each filteredLibrary as t (t.job_id)}
+              {@const isCurrent = app.currentTrack?.jobId === t.job_id}
               <li
-                class="relative overflow-hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition"
+                class="relative overflow-hidden flex items-center gap-2 px-3 py-2 bg-white dark:bg-paper-800 rounded-lg transition {isCurrent
+                  ? 'border border-claude/60'
+                  : ''}"
               >
                 <button
-                  class="flex-1 min-w-0 text-left truncate hover:text-claude transition"
-                  title={t.name}
+                  class="flex-1 min-w-0 text-left truncate transition {isCurrent
+                    ? 'text-claude cursor-default'
+                    : 'hover:text-claude'}"
+                  disabled={isCurrent}
+                  title={isCurrent ? 'currently loaded in player' : t.name}
                   onclick={(e) => {
                     e.stopPropagation();
                     pickLibrary(t);
@@ -369,6 +375,12 @@
                 >
                   {t.name}
                 </button>
+                {#if isCurrent}
+                  <span
+                    class="text-xs text-claude font-medium uppercase tracking-[0.15em] shrink-0"
+                    >current</span
+                  >
+                {/if}
                 <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0">
                   {fmtDate(t.created_at)}
                 </span>
