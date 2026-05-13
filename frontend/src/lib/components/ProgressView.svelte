@@ -3,7 +3,7 @@
   import { labelStage } from '$lib/format';
 
   const stageLabel = $derived(labelStage(app.status.stage) || 'starting…');
-  const clampedPct = $derived(Math.max(0, Math.min(100, app.status.percent)));
+  const clampedPct = $derived(Math.max(0, Math.min(100, Math.floor(app.status.percent))));
 </script>
 
 <section class="rounded-2xl bg-white dark:bg-paper-800 p-8">
