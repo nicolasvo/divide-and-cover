@@ -164,7 +164,14 @@
 <main class="mx-auto max-w-2xl px-6 py-14 lg:max-w-none lg:px-10">
   <header class="mb-10 flex items-center justify-between gap-4 lg:max-w-[36rem]">
     <h1 class="text-4xl font-semibold tracking-tight italic text-claude leading-none">
-      divide and cover
+      <button
+        type="button"
+        onclick={() => (searchOpen = true)}
+        title="search youtube"
+        class="hover:text-claude-300 cursor-pointer transition"
+      >
+        divide and cover
+      </button>
     </h1>
     <ThemeToggle />
   </header>
