@@ -56,6 +56,16 @@
       .trim();
   }
 
+  // Prefill helper for the search input — drops "artist - title" style
+  // separators (dash flanked by whitespace) but keeps in-word dashes like
+  // "well-known" or "Numb-Acoustic" intact. Supports ASCII -, en –, em —.
+  function cleanSeed(name: string): string {
+    return name
+      .replace(/\s+[-–—]\s+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   let dialogOpen = $state(false);
   let contentEl: HTMLDivElement | null = $state(null);
   let linesEl: HTMLOListElement | null = $state(null);
@@ -466,7 +476,7 @@
 
 <LyricsSearch
   open={dialogOpen}
-  seed={app.currentTrack?.name || ''}
+  seed={cleanSeed(app.currentTrack?.name || '')}
   trackDuration={app.player.duration}
   currentId={lyrics.id}
   onClose={() => (dialogOpen = false)}
