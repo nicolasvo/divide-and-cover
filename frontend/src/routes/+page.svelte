@@ -94,20 +94,31 @@
     }, 4000);
   }
 
+  /** Stop the currently playing track and detach it from the UI before
+   *  kicking off any new split / load — otherwise the lyrics pane and the
+   *  in-memory audio of the previous song stick around during the progress
+   *  view. */
+  function clearActiveTrack() {
+    engine.pause();
+    app.currentTrack = null;
+  }
+
   async function onFile(file: File) {
+    clearActiveTrack();
     app.view = 'status';
     app.status = { stage: 'uploading', percent: 0, message: file.name };
     await runSeparation(() => separateFile(file));
   }
 
   async function onYoutubePick(videoId: string, title: string) {
+    clearActiveTrack();
     app.view = 'status';
     app.status = { stage: 'downloading_audio', percent: 0, message: title };
     await runSeparation(() => separateYouTube(videoId, title));
   }
 
   async function loadFromLibrary(jobId: string, name: string) {
-    engine.pause();
+    clearActiveTrack();
     app.view = 'status';
     app.status = { stage: 'loading', percent: 0, message: name };
     try {
