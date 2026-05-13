@@ -2,9 +2,20 @@
 
 Drop a song, get four stems. Web UI on top of [demucs](https://github.com/adefossez/demucs).
 
-| | |
-|---|---|
-| ![](screenshots/1.png) | ![](screenshots/2.png) |
+<table>
+<tr>
+<td>
+
+![](screenshots/1.png)
+
+</td>
+<td>
+
+![](screenshots/2.png)
+
+</td>
+</tr>
+</table>
 
 ## Run
 
