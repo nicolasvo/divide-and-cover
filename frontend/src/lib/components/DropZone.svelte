@@ -1,17 +1,12 @@
 <script lang="ts">
-  import { app } from '$lib/state.svelte';
-
   type Props = {
     onFile: (f: File) => void;
     onOpenSearch: () => void;
-    onOpenLibrary: () => void;
   };
-  let { onFile, onOpenSearch, onOpenLibrary }: Props = $props();
+  let { onFile, onOpenSearch }: Props = $props();
 
   let hot = $state(false);
   let fileInput: HTMLInputElement;
-
-  const hasLibrary = $derived(app.tracks.length > 0);
 
   function onDragEnter(e: DragEvent) {
     e.preventDefault();
@@ -70,23 +65,6 @@
     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition"
   >
     <span class="material-symbols-outlined" style="font-size:20px">search</span>
-    <span>search youtube</span>
+    <span>search youtube / library</span>
   </button>
-
-  {#if hasLibrary}
-    <div class="flex items-center gap-3 my-6 max-w-xs mx-auto">
-      <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
-      <span class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">or</span>
-      <span class="flex-1 h-px bg-stone-300 dark:bg-stone-700"></span>
-    </div>
-
-    <button
-      type="button"
-      onclick={onOpenLibrary}
-      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-paper-50 dark:bg-paper-900 hover:border-claude/70 hover:text-claude transition"
-    >
-      <span class="material-symbols-outlined" style="font-size:20px">library_music</span>
-      <span>open library</span>
-    </button>
-  {/if}
 </section>

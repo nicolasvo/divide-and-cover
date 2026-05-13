@@ -14,11 +14,9 @@
   import DropZone from '$lib/components/DropZone.svelte';
   import ProgressView from '$lib/components/ProgressView.svelte';
   import Player from '$lib/components/Player.svelte';
-  import Library from '$lib/components/Library.svelte';
   import YouTubeSearch from '$lib/components/YouTubeSearch.svelte';
   import Lyrics from '$lib/components/Lyrics.svelte';
 
-  let libraryOpen = $state(false);
   let searchOpen = $state(false);
 
   async function refreshLibrary() {
@@ -123,11 +121,12 @@
     }
   }
 
-  function onReset() {
-    engine.reset();
-    app.currentTrack = null;
-    app.view = 'drop';
+  function onSelectAnother() {
+    // open the merged search/library dialog without tearing down the current
+    // player — if the user closes without picking, they return to playback;
+    // if they pick something, loadFromLibrary / onYoutubePick replaces it.
     refreshLibrary();
+    searchOpen = true;
   }
 
   // --- keyboard shortcuts (only when player visible) ------------------------
@@ -167,7 +166,7 @@
       <button
         type="button"
         onclick={() => (searchOpen = true)}
-        title="search youtube"
+        title="open library / search youtube"
         class="hover:text-claude-300 cursor-pointer transition"
       >
         divide and cover
@@ -181,15 +180,11 @@
       <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">player</h3>
 
       {#if app.view === 'drop'}
-        <DropZone
-          onFile={onFile}
-          onOpenSearch={() => (searchOpen = true)}
-          onOpenLibrary={() => (libraryOpen = true)}
-        />
+        <DropZone onFile={onFile} onOpenSearch={() => (searchOpen = true)} />
       {:else if app.view === 'status'}
         <ProgressView />
       {:else}
-        <Player onReset={onReset} />
+        <Player onSelectAnother={onSelectAnother} />
       {/if}
     </div>
 
@@ -197,20 +192,11 @@
   </div>
 </main>
 
-<Library
-  open={libraryOpen}
-  onClose={() => (libraryOpen = false)}
-  onLoad={loadFromLibrary}
-  onAfterDelete={() => {
-    refreshLibrary();
-    // close if library went empty
-    if (app.tracks.length === 0) libraryOpen = false;
-  }}
-/>
-
 <YouTubeSearch
   open={searchOpen}
   onClose={() => (searchOpen = false)}
   onLoadLibrary={loadFromLibrary}
   onPickYouTube={onYoutubePick}
+  onAfterDelete={refreshLibrary}
+  onFile={onFile}
 />
