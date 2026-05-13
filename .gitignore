@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 tracks/
 .DS_Store
+.env

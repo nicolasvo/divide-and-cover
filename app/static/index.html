@@ -211,9 +211,12 @@
         </section>
 
         <section id="status" class="hidden rounded-2xl bg-white dark:bg-paper-800 p-8">
-          <div class="flex items-baseline justify-between mb-3">
-            <p id="status-stage" class="text-lg">starting…</p>
-            <span id="status-percent" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono"></span>
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="material-symbols-outlined shrink-0" style="font-size:20px;animation:spin 1.2s linear infinite">progress_activity</span>
+              <p id="status-stage" class="text-lg truncate">starting…</p>
+            </div>
+            <span id="status-percent" class="text-sm text-stone-500 dark:text-stone-400 tabular-nums font-mono shrink-0"></span>
           </div>
           <div class="h-2 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
             <div id="status-bar" class="h-full bg-claude transition-[width] duration-150 ease-linear" style="width:0%"></div>

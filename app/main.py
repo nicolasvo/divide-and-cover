@@ -30,6 +30,16 @@ DEMUCS_PCT_RE = re.compile(rb"(\d+)%\|")
 YT_PCT_RE = re.compile(rb"(\d+(?:\.\d+)?)%")
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,15}$")
 
+# DAC_USE_MODAL=1 → offload demucs to the modal serverless GPU function
+# defined in `modal_app.py`; otherwise run demucs locally as a subprocess.
+USE_MODAL = os.environ.get("DAC_USE_MODAL") == "1"
+
+if USE_MODAL:
+    import modal
+    modal_separate = modal.Function.from_name("divide-and-cover", "separate")
+else:
+    modal_separate = None
+
 LRCLIB_BASE = "https://lrclib.net/api"
 LRC_USER_AGENT = "divide-and-cover/0.1 (+https://github.com/)"
 LRC_TIME_RE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
@@ -61,8 +71,48 @@ def index() -> str:
 
 # --- demucs streaming ------------------------------------------------------
 
-async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
-    """Run demucs on `src`, persist stems to TRACKS/{job_id}, yield NDJSON events."""
+def _done_event(job_id: str, name: str) -> bytes:
+    return _ndjson({
+        "event": "done",
+        "job_id": job_id,
+        "name": name,
+        "stems": {s: f"/api/stem/{job_id}/{s}" for s in STEMS},
+    })
+
+
+async def _stream_separation_modal(src: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
+    """Offload demucs to the modal `divide-and-cover/separate` function."""
+    yield _ndjson({"event": "stage", "stage": "starting", "message": "uploading to gpu…"})
+
+    audio_bytes = src.read_bytes()
+    suffix = src.suffix or ".wav"
+
+    yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on gpu…"})
+
+    try:
+        stems = await modal_separate.remote.aio(audio_bytes, suffix)
+    except Exception as e:
+        yield _ndjson({"event": "error", "message": f"modal: {str(e)[:240]}"})
+        return
+
+    yield _ndjson({"event": "stage", "stage": "saving", "message": "saving stems…"})
+
+    final = TRACKS / job_id
+    final.mkdir(parents=True)
+    for stem in STEMS:
+        data = stems.get(stem)
+        if not data:
+            yield _ndjson({"event": "error", "message": f"missing stem {stem}"})
+            return
+        (final / f"{stem}.mp3").write_bytes(data)
+    (final / "meta.json").write_text(
+        json.dumps({"name": name, "created_at": time.time()})
+    )
+    yield _done_event(job_id, name)
+
+
+async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
+    """Run demucs as a local subprocess, parse stdout for progress, persist stems."""
     cmd = [
         sys.executable, "-u", "-m", "demucs",
         "--mp3", "-n", MODEL,
@@ -131,13 +181,7 @@ async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) 
         (final / "meta.json").write_text(
             json.dumps({"name": name, "created_at": time.time()})
         )
-
-        yield _ndjson({
-            "event": "done",
-            "job_id": job_id,
-            "name": name,
-            "stems": {s: f"/api/stem/{job_id}/{s}" for s in STEMS},
-        })
+        yield _done_event(job_id, name)
     finally:
         if proc.returncode is None:
             proc.terminate()
@@ -145,6 +189,15 @@ async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) 
                 await asyncio.wait_for(proc.wait(), timeout=5)
             except asyncio.TimeoutError:
                 proc.kill()
+
+
+async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str) -> AsyncIterator[bytes]:
+    if USE_MODAL:
+        async for chunk in _stream_separation_modal(src, job_id, name):
+            yield chunk
+    else:
+        async for chunk in _stream_separation_local(src, work_out, job_id, name):
+            yield chunk
 
 
 # --- file upload + separate ------------------------------------------------
