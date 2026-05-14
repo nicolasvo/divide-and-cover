@@ -30,10 +30,14 @@
       activeQuery = '';
       results = [];
       errMsg = '';
-      setTimeout(() => {
-        inputEl?.focus();
-        inputEl?.select();
-      }, 0);
+      // Auto-focus only on desktop — on mobile, focusing pops up the soft
+      // keyboard. Let the user tap the input themselves.
+      if (window.matchMedia('(min-width: 768px)').matches) {
+        setTimeout(() => {
+          inputEl?.focus();
+          inputEl?.select();
+        }, 0);
+      }
     }
   });
 

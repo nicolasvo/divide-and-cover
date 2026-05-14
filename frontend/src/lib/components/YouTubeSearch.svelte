@@ -74,8 +74,12 @@
   $effect(() => {
     if (open) {
       reset();
-      // wait for the DOM to mount so the input ref is attached
-      setTimeout(() => inputEl?.focus(), 0);
+      // Auto-focus only on desktop — on mobile, focusing pops up the soft
+      // keyboard, which covers half the sheet. Let the user tap the input
+      // themselves when they actually want to type.
+      if (window.matchMedia('(min-width: 768px)').matches) {
+        setTimeout(() => inputEl?.focus(), 0);
+      }
     }
   });
 
