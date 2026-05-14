@@ -46,6 +46,11 @@
     e.preventDefault();
     const query = q.trim();
     if (!query || loading) return;
+    // On mobile, dismiss the soft keyboard so the result list is visible.
+    // Skipped on desktop — keeps focus so the user can refine the query.
+    if (!window.matchMedia('(min-width: 768px)').matches) {
+      inputEl?.blur();
+    }
     activeQuery = query;
     results = []; // clear before showing the spinner
     loading = true;
@@ -99,7 +104,7 @@
     <div
       bind:this={panelEl}
       onclick={(e) => e.stopPropagation()}
-      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[92vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
+      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[90vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
   >
     <header
       use:swipeDown={{ onClose, target: panelEl ?? undefined }}
