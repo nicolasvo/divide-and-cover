@@ -80,33 +80,56 @@
       startEdit();
     }
   }
+
+  // Mobile compact mode: hide stem controls + "select another song" by
+  // default; show via the expand toggle. Always expanded on desktop.
+  let expanded = $state(false);
 </script>
 
 <section class="rounded-2xl bg-white dark:bg-paper-800 p-6">
-  {#if editing}
-    <input
-      bind:this={inputEl}
-      bind:value={draft}
-      onkeydown={onEditKeydown}
-      onblur={commitEdit}
-      disabled={saving}
-      type="text"
-      class="block w-full text-xl mb-5 italic bg-transparent border-b border-claude/60 focus:border-claude outline-none transition disabled:opacity-60"
-    />
-  {:else}
-    <h2
-      onclick={startEdit}
-      onkeydown={onTitleKeydown}
-      role="button"
-      tabindex="0"
-      title="click to rename"
-      class="text-xl mb-5 break-words italic cursor-text hover:text-claude transition"
+  <div class="flex items-start justify-between gap-3 mb-5">
+    <div class="flex-1 min-w-0">
+      {#if editing}
+        <input
+          bind:this={inputEl}
+          bind:value={draft}
+          onkeydown={onEditKeydown}
+          onblur={commitEdit}
+          disabled={saving}
+          type="text"
+          class="block w-full text-xl italic bg-transparent border-b border-claude/60 focus:border-claude outline-none transition disabled:opacity-60"
+        />
+      {:else}
+        <h2
+          onclick={startEdit}
+          onkeydown={onTitleKeydown}
+          role="button"
+          tabindex="0"
+          title={trackName}
+          class="text-xl italic truncate cursor-text hover:text-claude transition"
+        >
+          {trackName}
+        </h2>
+      {/if}
+    </div>
+    <!-- mobile-only expand toggle: lives next to the title to save vertical space -->
+    <button
+      type="button"
+      onclick={() => (expanded = !expanded)}
+      aria-label={expanded ? 'collapse player' : 'expand player'}
+      class="lg:hidden shrink-0 -mt-1 -mr-2 w-9 h-9 rounded-full text-stone-400 hover:text-claude transition flex items-center justify-center"
     >
-      {trackName}
-    </h2>
-  {/if}
+      <span class="material-symbols-outlined" style="font-size:24px">
+        {expanded ? 'expand_less' : 'expand_more'}
+      </span>
+    </button>
+  </div>
 
-  <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-2 mb-6">
+  <div
+    class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-2 lg:mb-6 {expanded
+      ? 'mb-6'
+      : 'mb-0'}"
+  >
     <div class="flex items-center gap-2 lg:order-2 lg:flex-1">
       <input
         id="seek"
@@ -148,12 +171,14 @@
     </div>
   </div>
 
-  <StemControls />
+  <div class="{expanded ? 'block' : 'hidden'} lg:block">
+    <StemControls />
 
-  <button
-    onclick={onSelectAnother}
-    class="w-full px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2"
-  >
-    select another song
-  </button>
+    <button
+      onclick={onSelectAnother}
+      class="w-full px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2"
+    >
+      select another song
+    </button>
+  </div>
 </section>

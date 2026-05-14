@@ -171,8 +171,17 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<main class="mx-auto max-w-2xl px-6 py-14 lg:max-w-none lg:px-10">
-  <header class="mb-10 flex items-center justify-between gap-4 lg:max-w-[36rem]">
+<!--
+  Mobile layout: the entire viewport is one fixed-height flex column.
+  Nothing on the page scrolls — only the lyrics list inside its aside does.
+  Desktop falls back to natural-flow layout via lg: overrides.
+-->
+<main
+  class="mx-auto max-w-2xl px-6 py-4 lg:max-w-none lg:px-10 lg:py-14 h-dvh flex flex-col overflow-hidden lg:h-auto lg:block lg:overflow-visible"
+>
+  <header
+    class="flex-none mb-4 lg:mb-10 flex items-center justify-between gap-4 lg:max-w-[36rem]"
+  >
     <h1 class="text-4xl font-semibold tracking-tight italic text-claude leading-none">
       <button
         type="button"
@@ -186,9 +195,9 @@
     <ThemeToggle />
   </header>
 
-  <div class="lg:flex lg:items-start lg:gap-8">
-    <div class="lg:w-[36rem] lg:flex-none lg:min-w-0">
-      <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">player</h3>
+  <div class="flex-1 min-h-0 flex flex-col lg:flex-row lg:items-start lg:gap-8">
+    <div class="flex-none lg:w-[36rem] lg:flex-none lg:min-w-0">
+      <h3 class="hidden lg:block text-xs uppercase tracking-[0.2em] text-stone-500 mb-3">player</h3>
 
       {#if app.view === 'drop'}
         <DropZone onFile={onFile} onOpenSearch={() => (searchOpen = true)} />

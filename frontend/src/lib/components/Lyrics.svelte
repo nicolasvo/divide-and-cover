@@ -71,8 +71,6 @@
   let linesEl: HTMLOListElement | null = $state(null);
   let headerEl: HTMLElement | null = $state(null);
   let paneEl: HTMLElement | null = $state(null);
-  let isLg = $state(false);
-  let lastProgrammaticScrollTs = 0;
   let followBtnVisible = $state(false);
 
   // load lyrics whenever the current track changes
@@ -96,19 +94,37 @@
     if (!app.player.playing) syncing = false;
   });
 
+  // Re-center the active line whenever the scroll container itself resizes
+  // (player expanded/collapsed, keyboard opened, device rotated). Coalesced
+  // through rAF so a burst of resize events only triggers one scroll, and
+  // uses instant scroll so the next burst doesn't cancel a still-animating
+  // smooth scroll.
+  $effect(() => {
+    if (!contentEl) return;
+    let rafId: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (userScrolled) return;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (!contentEl || !linesEl || activeIdx < 0) return;
+        const el = linesEl.children[activeIdx] as HTMLElement | undefined;
+        if (!el) return;
+        const target = Math.max(0, el.offsetTop - contentEl.clientHeight * 0.28);
+        contentEl.scrollTo({ top: target, behavior: 'auto' });
+      });
+    });
+    ro.observe(contentEl);
+    return () => {
+      ro.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  });
+
   // track active line whenever player time changes
   $effect(() => {
     const t = app.player.currentTime;
     updateActive(t);
-  });
-
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(min-width: 1024px)');
-    isLg = mq.matches;
-    const cb = () => (isLg = mq.matches);
-    mq.addEventListener('change', cb);
-    return () => mq.removeEventListener('change', cb);
   });
 
   async function loadLyrics(jobId: string, fallbackName: string, opts: { refresh?: boolean } = {}) {
@@ -179,16 +195,11 @@
   function scrollActiveIntoView() {
     if (activeIdx < 0 || !linesEl) return;
     const el = linesEl.children[activeIdx] as HTMLElement | undefined;
-    if (!el) return;
-    if (isLg && contentEl) {
-      const target = Math.max(0, el.offsetTop - contentEl.clientHeight * 0.28);
-      contentEl.scrollTo({ top: target, behavior: 'smooth' });
-    } else {
-      const rect = el.getBoundingClientRect();
-      const target = window.scrollY + rect.top - window.innerHeight * 0.28;
-      lastProgrammaticScrollTs = Date.now();
-      window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
-    }
+    if (!el || !contentEl) return;
+    // lyrics always scroll inside contentEl (constrained-height aside on both
+    // desktop and mobile — no more window-scroll fallback)
+    const target = Math.max(0, el.offsetTop - contentEl.clientHeight * 0.28);
+    contentEl.scrollTo({ top: target, behavior: 'smooth' });
   }
 
   function setFollowing(following: boolean) {
@@ -204,27 +215,7 @@
   }
 
   function updateFollowVisibility() {
-    if (!userScrolled || !app.player.playing || !lyrics.hasSynced) {
-      followBtnVisible = false;
-      return;
-    }
-    if (isLg) {
-      followBtnVisible = true;
-      return;
-    }
-    if (!headerEl || !paneEl) return;
-    const headerRect = headerEl.getBoundingClientRect();
-    const btnTop = window.innerHeight - 52;
-    if (headerRect.bottom > btnTop) {
-      followBtnVisible = false;
-      return;
-    }
-    const asideRect = paneEl.getBoundingClientRect();
-    if (asideRect.bottom < 0 || asideRect.top > window.innerHeight) {
-      followBtnVisible = false;
-      return;
-    }
-    followBtnVisible = true;
+    followBtnVisible = !!(userScrolled && app.player.playing && lyrics.hasSynced);
   }
 
   function onWheel() {
@@ -232,17 +223,6 @@
   }
   function onTouch() {
     setFollowing(false);
-  }
-
-  function onMobileScroll() {
-    if (isLg) return;
-    if (Date.now() - lastProgrammaticScrollTs < 700) return;
-    setFollowing(false);
-    updateFollowVisibility();
-  }
-  function onWindowScroll() {
-    if (isLg) return;
-    if (userScrolled) updateFollowVisibility();
   }
 
   function onLineClick(line: LyricLine) {
@@ -296,16 +276,10 @@
   const showContent = $derived(!loading && lyrics.found);
 </script>
 
-<svelte:window
-  onwheel={onMobileScroll}
-  ontouchmove={onMobileScroll}
-  onscroll={onWindowScroll}
-/>
-
 {#if app.currentTrack}
 <aside
   bind:this={paneEl}
-  class="order-3 flex flex-col mt-14 lg:mt-0 lg:h-[calc(100vh-12rem)] lg:flex-1 lg:min-w-0 lg:sticky lg:top-6 lg:self-start lg:relative"
+  class="order-3 relative flex flex-col flex-1 min-h-0 mt-4 lg:mt-0 lg:h-[calc(100vh-12rem)] lg:min-w-0 lg:sticky lg:top-6 lg:self-start"
 >
   <div class="flex-none flex items-start justify-between mb-3">
     <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
@@ -418,7 +392,7 @@
         if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(e.key))
           setFollowing(false);
       }}
-      class="flex-1 overflow-y-auto overflow-x-hidden pr-6"
+      class="relative flex-1 overflow-y-auto overflow-x-hidden pr-6"
     >
       <ol
         bind:this={linesEl}
@@ -463,7 +437,7 @@
     <button
       type="button"
       onclick={() => setFollowing(true)}
-      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 lg:absolute lg:-translate-x-1/2 px-4 h-9 rounded-full bg-claude hover:bg-claude-300 text-paper-50 text-sm font-medium shadow-lg flex items-center gap-1.5 transition"
+      class="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 px-4 h-9 rounded-full bg-claude hover:bg-claude-300 text-paper-50 text-sm font-medium shadow-lg flex items-center gap-1.5 transition"
     >
       <span class="material-symbols-outlined" style="font-size:18px">steps</span>
       follow
@@ -474,7 +448,7 @@
     <button
       type="button"
       onclick={() => (syncing = false)}
-      class="fixed left-1/2 -translate-x-1/2 z-30 lg:absolute lg:-translate-x-1/2 px-4 h-9 rounded-full bg-white dark:bg-paper-800 border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude text-sm font-medium shadow-lg flex items-center gap-1.5 transition {followBtnVisible
+      class="absolute left-1/2 -translate-x-1/2 z-30 px-4 h-9 rounded-full bg-white dark:bg-paper-800 border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude text-sm font-medium shadow-lg flex items-center gap-1.5 transition {followBtnVisible
         ? 'bottom-16'
         : 'bottom-4'}"
     >
