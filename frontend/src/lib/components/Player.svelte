@@ -112,16 +112,17 @@
         </h2>
       {/if}
     </div>
-    <!-- mobile-only expand toggle: lives next to the title to save vertical space -->
+    <!-- mobile-only mixer toggle: shows/hides stems + select-another row -->
     <button
       type="button"
       onclick={() => (expanded = !expanded)}
-      aria-label={expanded ? 'collapse player' : 'expand player'}
-      class="lg:hidden shrink-0 -mt-1 -mr-2 w-9 h-9 rounded-full text-stone-400 hover:text-claude transition flex items-center justify-center"
+      aria-label={expanded ? 'hide mixer' : 'show mixer'}
+      title={expanded ? 'hide mixer' : 'show mixer'}
+      class="lg:hidden shrink-0 -mt-1 -mr-2 w-9 h-9 rounded-full transition flex items-center justify-center {expanded
+        ? 'text-claude bg-claude/10'
+        : 'text-stone-400 hover:text-claude'}"
     >
-      <span class="material-symbols-outlined" style="font-size:24px">
-        {expanded ? 'expand_less' : 'expand_more'}
-      </span>
+      <span class="material-symbols-outlined" style="font-size:24px">tune</span>
     </button>
   </div>
 
