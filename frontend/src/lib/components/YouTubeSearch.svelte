@@ -383,7 +383,7 @@
         <!-- ============ LIBRARY MODE ============ -->
         {#if filteredLibrary.length === 0}
           <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">
-            {app.tracks.length === 0 ? 'no tracks yet' : 'no tracks match'}
+            {app.tracks.length === 0 ? 'no tracks yet' : 'type a song name and press enter'}
           </p>
         {:else}
           <ul class="grid gap-2 list-none p-0">

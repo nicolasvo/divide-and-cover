@@ -151,7 +151,7 @@
     <div class="flex-1 overflow-y-auto px-5 pb-5">
       {#if !activeQuery && !loading && !errMsg}
         <p class="text-sm text-stone-500 dark:text-stone-400 italic text-center py-8">
-          type a query and press enter
+          type a song name and press enter
         </p>
       {/if}
       {#if loading && !results.length}
