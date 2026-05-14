@@ -108,17 +108,23 @@
   >
     <header
       use:swipeDown={{ onClose, target: panelEl ?? undefined }}
-      class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800 touch-none"
+      class="px-5 py-4 border-b border-stone-200 dark:border-stone-800 touch-none"
     >
-      <h2 class="text-xl italic">search lyrics</h2>
-      <button
-        type="button"
-        aria-label="close"
-        onclick={onClose}
-        class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center"
-      >
-        <span class="material-symbols-outlined" style="font-size:20px">close</span>
-      </button>
+      <div
+        aria-hidden="true"
+        class="md:hidden mx-auto mb-3 h-1.5 w-9 rounded-full bg-stone-300 dark:bg-stone-700"
+      ></div>
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl italic">search lyrics</h2>
+        <button
+          type="button"
+          aria-label="close"
+          onclick={onClose}
+          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center"
+        >
+          <span class="material-symbols-outlined" style="font-size:20px">close</span>
+        </button>
+      </div>
     </header>
 
     <form onsubmit={submit} class="flex gap-2 px-5 py-4">
