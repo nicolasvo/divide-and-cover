@@ -84,6 +84,32 @@
   // Mobile compact mode: hide stem controls + "select another song" by
   // default; show via the expand toggle. Always expanded on desktop.
   let expanded = $state(false);
+
+  // share button: tries the native share sheet first (mobile), falls back
+  // to copying the URL to the clipboard. `copied` flashes the icon for
+  // ~1.5s so the user sees something happened.
+  let copied = $state(false);
+  async function share() {
+    if (typeof window === 'undefined') return;
+    const url = window.location.href;
+    const title = app.currentTrack?.name ?? 'divide and cover';
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch {
+        // user cancelled the share sheet or it isn't available — fall through
+        // to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      /* clipboard blocked — nothing we can do gracefully */
+    }
+  }
 </script>
 
 <section class="rounded-2xl bg-white dark:bg-paper-800 p-6">
@@ -112,18 +138,35 @@
         </h2>
       {/if}
     </div>
-    <!-- mobile-only mixer toggle: shows/hides stems + select-another row -->
-    <button
-      type="button"
-      onclick={() => (expanded = !expanded)}
-      aria-label={expanded ? 'hide mixer' : 'show mixer'}
-      title={expanded ? 'hide mixer' : 'show mixer'}
-      class="lg:hidden shrink-0 -mt-1 -mr-2 w-9 h-9 rounded-full transition flex items-center justify-center {expanded
-        ? 'text-claude bg-claude/10'
-        : 'text-stone-400 hover:text-claude'}"
-    >
-      <span class="material-symbols-outlined" style="font-size:24px">tune</span>
-    </button>
+    <div class="flex items-center gap-1 shrink-0 -mt-1 -mr-2">
+      <!-- share: native share sheet on mobile, clipboard copy on desktop -->
+      <button
+        type="button"
+        onclick={share}
+        aria-label="share link to this track"
+        title={copied ? 'link copied' : 'share link to this track'}
+        class="w-9 h-9 rounded-full transition flex items-center justify-center {copied
+          ? 'text-claude bg-claude/10'
+          : 'text-stone-400 hover:text-claude'}"
+      >
+        <span class="material-symbols-outlined" style="font-size:22px">
+          {copied ? 'check' : 'share'}
+        </span>
+      </button>
+
+      <!-- mobile-only mixer toggle: shows/hides stems + select-another row -->
+      <button
+        type="button"
+        onclick={() => (expanded = !expanded)}
+        aria-label={expanded ? 'hide mixer' : 'show mixer'}
+        title={expanded ? 'hide mixer' : 'show mixer'}
+        class="lg:hidden w-9 h-9 rounded-full transition flex items-center justify-center {expanded
+          ? 'text-claude bg-claude/10'
+          : 'text-stone-400 hover:text-claude'}"
+      >
+        <span class="material-symbols-outlined" style="font-size:24px">tune</span>
+      </button>
+    </div>
   </div>
 
   <div

@@ -27,8 +27,49 @@
     }
   }
 
-  onMount(() => {
-    refreshLibrary();
+  // --- shareable URL: ?track=<jobId> --------------------------------------
+
+  const TRACK_PARAM = 'track';
+
+  function syncUrlToCurrentTrack() {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const desired = app.currentTrack?.jobId ?? null;
+    const present = params.get(TRACK_PARAM);
+    if (desired === present) return;
+    if (desired) params.set(TRACK_PARAM, desired);
+    else params.delete(TRACK_PARAM);
+    const qs = params.toString();
+    const next = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+    window.history.replaceState({}, '', next);
+  }
+
+  // The `$effect` below would fire on its initial pass with
+  // `app.currentTrack === null` and helpfully strip the `?track=` param
+  // before onMount could read it — a race against the async load. We gate
+  // it with a plain flag (not $state, so the effect doesn't re-run when the
+  // flag itself flips) and call `syncUrlToCurrentTrack` once explicitly at
+  // the end of onMount.
+  let initialUrlLoadPending = true;
+  $effect(() => {
+    app.currentTrack; // dependency
+    if (initialUrlLoadPending) return;
+    syncUrlToCurrentTrack();
+  });
+
+  onMount(async () => {
+    await refreshLibrary();
+    const params = new URLSearchParams(window.location.search);
+    const initialId = params.get(TRACK_PARAM);
+    if (initialId) {
+      const track = app.tracks.find((t) => t.job_id === initialId);
+      if (track) {
+        await loadFromLibrary(track.job_id, track.name);
+      }
+      // if not found, the trailing syncUrlToCurrentTrack() below will strip the param
+    }
+    initialUrlLoadPending = false;
+    syncUrlToCurrentTrack();
   });
 
   // --- upload + youtube separation flow (NDJSON streaming) ------------------
