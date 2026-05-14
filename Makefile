@@ -121,7 +121,7 @@ include .env
 
 .PHONY: tunnel-start
 tunnel-start:
-	@ps aux | grep -q "ssh.*1080" && echo "Tunnel already running" || \
+	@ps aux | grep -q "[s]sh.*1080" && echo "Tunnel already running" || \
 		ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 		-D 0.0.0.0:1080 -f -N $(SSH_PROXY_USER)@$(SSH_PROXY_HOST)
 
