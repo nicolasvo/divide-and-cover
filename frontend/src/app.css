@@ -167,11 +167,16 @@ body.no-scroll {
 .dark .lyric-line {
   color: rgba(168, 162, 158, 0.28);
 }
-.lyric-line:hover {
-  color: rgba(120, 113, 108, 0.95);
-}
-.dark .lyric-line:hover {
-  color: rgba(231, 229, 228, 0.85);
+/* Hover only on devices with a real pointer (desktop mouse / trackpad).
+ * On touch-only devices, `:hover` "sticks" after a tap and would leave a
+ * line stuck in the bright hover color until another tap moves focus. */
+@media (hover: hover) {
+  .lyric-line:hover {
+    color: rgba(120, 113, 108, 0.95);
+  }
+  .dark .lyric-line:hover {
+    color: rgba(231, 229, 228, 0.85);
+  }
 }
 .lyric-line.active {
   color: #d97757;
