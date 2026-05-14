@@ -23,6 +23,7 @@
   let errMsg = $state('');
   let inputEl: HTMLInputElement | null = $state(null);
   let backdropEl: HTMLDivElement | null = $state(null);
+  let panelEl: HTMLDivElement | null = $state(null);
 
   $effect(() => {
     if (open) {
@@ -96,12 +97,13 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      use:swipeDown={onClose}
+      bind:this={panelEl}
       onclick={(e) => e.stopPropagation()}
-      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[92vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
+      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[92vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
   >
     <header
-      class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800"
+      use:swipeDown={{ onClose, target: panelEl ?? undefined }}
+      class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800 touch-none"
     >
       <h2 class="text-xl italic">search lyrics</h2>
       <button
@@ -121,7 +123,7 @@
         type="search"
         autocomplete="off"
         placeholder="artist - title"
-        class="flex-1 h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition"
+        class="flex-1 min-w-0 h-11 px-4 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition"
       />
       <button
         type="submit"
@@ -161,10 +163,10 @@
             {@const matches = durationMatches(r)}
             {@const flags = flagsFor(r)}
             {@const isCurrent = currentId === r.id}
-            <li>
+            <li class="min-w-0">
               <button
                 onclick={() => onPick(r)}
-                class="w-full flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border rounded-lg cursor-pointer transition group text-left {isCurrent
+                class="w-full min-w-0 flex items-baseline gap-3 px-3 py-2 bg-white dark:bg-paper-800 border rounded-lg cursor-pointer transition group text-left {isCurrent
                   ? 'border-claude/60 hover:border-claude'
                   : 'border-stone-200 dark:border-stone-800 hover:border-claude/60'}"
               >

@@ -60,6 +60,7 @@
   let errMsg = $state('');
   let inputEl: HTMLInputElement | null = $state(null);
   let fileInputEl: HTMLInputElement | null = $state(null);
+  let panelEl: HTMLDivElement | null = $state(null);
   let confirming = $state<string | null>(null); // job_id whose delete swipe is revealed
 
   function handleFilePick(e: Event) {
@@ -293,12 +294,13 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      use:swipeDown={onClose}
+      bind:this={panelEl}
       onclick={(e) => e.stopPropagation()}
-      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[92vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
+      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[92vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
   >
     <header
-      class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800"
+      use:swipeDown={{ onClose, target: panelEl ?? undefined }}
+      class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800 touch-none"
     >
       <h2 class="text-xl italic">
         {activeQuery ? 'search youtube' : 'library'}
@@ -332,7 +334,7 @@
     </header>
 
     <form onsubmit={onSubmit} class="flex gap-2 px-5 py-4">
-      <div class="relative flex-1">
+      <div class="relative flex-1 min-w-0">
         <input
           bind:this={inputEl}
           bind:value={q}
@@ -340,7 +342,7 @@
           type="search"
           autocomplete="off"
           placeholder={activeQuery ? 'search youtube…' : 'filter library or search youtube…'}
-          class="w-full h-11 pl-4 pr-10 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition"
+          class="w-full min-w-0 h-11 pl-4 pr-10 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition"
         />
         {#if q.length > 0 || activeQuery}
           <button
@@ -453,10 +455,10 @@
               </li>
             {/if}
             {#each ytSplit.libReplacements as t (t.job_id)}
-              <li>
+              <li class="min-w-0">
                 <button
                   onclick={() => pickLibrary(t)}
-                  class="w-full flex gap-3 p-2 bg-white dark:bg-paper-800 border border-claude/40 rounded-lg hover:border-claude cursor-pointer transition group text-left"
+                  class="w-full min-w-0 flex gap-3 p-2 bg-white dark:bg-paper-800 border border-claude/40 rounded-lg hover:border-claude cursor-pointer transition group text-left"
                 >
                   <div
                     class="w-32 aspect-video flex items-center justify-center rounded bg-claude/10 shrink-0"
@@ -479,7 +481,7 @@
               </li>
             {/each}
             {#each ytSplit.fresh as r (r.id)}
-              <li class="flex gap-2 items-center">
+              <li class="min-w-0 flex gap-2 items-center">
                 <button
                   onclick={() => pickYT(r)}
                   class="flex-1 min-w-0 flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group text-left"
