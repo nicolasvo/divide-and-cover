@@ -260,4 +260,5 @@
   onPickYouTube={onYoutubePick}
   onAfterDelete={refreshLibrary}
   onFile={onFile}
+  onRefresh={refreshLibrary}
 />

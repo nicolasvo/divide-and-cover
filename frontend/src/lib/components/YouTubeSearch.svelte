@@ -18,6 +18,7 @@
     onPickYouTube: (videoId: string, title: string) => void;
     onAfterDelete: () => void;
     onFile: (file: File) => void;
+    onRefresh: () => void | Promise<void>;
   };
   let {
     open,
@@ -25,7 +26,8 @@
     onLoadLibrary,
     onPickYouTube,
     onAfterDelete,
-    onFile
+    onFile,
+    onRefresh
   }: Props = $props();
 
   const PAGE = 10;
@@ -75,6 +77,10 @@
   $effect(() => {
     if (open) {
       reset();
+      // Pull the latest library every time the sheet opens so freshly-split
+      // tracks (possibly from another tab / device) show up without needing
+      // a page reload.
+      void onRefresh();
       // Auto-focus only on desktop — on mobile, focusing pops up the soft
       // keyboard, which covers half the sheet. Let the user tap the input
       // themselves when they actually want to type.
