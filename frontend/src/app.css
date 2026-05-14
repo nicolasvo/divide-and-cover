@@ -107,12 +107,12 @@ input[type='range']::-moz-range-thumb {
   user-select: none;
 }
 
+/* legacy native-dialog styles, kept for any remaining <dialog> use */
 dialog::backdrop {
   background: rgba(15, 14, 12, 0.55);
   backdrop-filter: blur(2px);
 }
 dialog.app-dialog {
-  /* margin: auto restores native centering — Tailwind 4 preflight zeros it out */
   margin: auto;
   padding: 0;
   border: 0;
@@ -120,6 +120,27 @@ dialog.app-dialog {
   width: 100%;
   max-height: calc(100vh - 64px);
   border-radius: 16px;
+}
+
+/* --- sheet / modal animations (used by the div-based responsive sheet) --- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* lock body scroll while a sheet/modal is open */
+body.no-scroll {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
 }
 
 #lyrics-content {

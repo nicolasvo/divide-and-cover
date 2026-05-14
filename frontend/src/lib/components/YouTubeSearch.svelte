@@ -8,6 +8,8 @@
     type YTHit,
     type Track
   } from '$lib/api';
+  import { lockScroll } from '$lib/actions/lockScroll';
+  import { swipeDown } from '$lib/actions/swipeDown';
 
   type Props = {
     open: boolean;
@@ -48,7 +50,6 @@
 
   let videoLookupSeq = 0;
 
-  let dialog: HTMLDialogElement | null = $state(null);
   let q = $state(''); // current input value (live)
   let activeQuery = $state(''); // last submitted query — switches view to youtube mode
   let results = $state<YTHit[]>([]);
@@ -71,13 +72,10 @@
   }
 
   $effect(() => {
-    if (!dialog) return;
-    if (open && !dialog.open) {
+    if (open) {
       reset();
-      dialog.showModal();
+      // wait for the DOM to mount so the input ref is attached
       setTimeout(() => inputEl?.focus(), 0);
-    } else if (!open && dialog.open) {
-      dialog.close();
     }
   });
 
@@ -93,8 +91,9 @@
     confirming = null;
   }
 
+  let backdropEl: HTMLDivElement | null = $state(null);
   function onBackdrop(e: MouseEvent) {
-    if (e.target === dialog) onClose();
+    if (e.target === backdropEl) onClose();
   }
 
   function onInput() {
@@ -267,17 +266,33 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === 'Escape') confirming = null;
+    if (!open) return;
+    if (e.key === 'Escape') {
+      if (confirming) {
+        confirming = null;
+      } else {
+        onClose();
+      }
+    }
   }}
 />
 
-<dialog
-  bind:this={dialog}
-  onclose={onClose}
-  onclick={onBackdrop}
-  class="app-dialog bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif"
->
-  <div class="flex flex-col max-h-[calc(100vh-64px)]">
+{#if open}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    bind:this={backdropEl}
+    use:lockScroll
+    onclick={onBackdrop}
+    class="fixed inset-0 z-50 bg-paper-950/55 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease] max-md:items-end max-md:p-0"
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      use:swipeDown={onClose}
+      onclick={(e) => e.stopPropagation()}
+      class="relative bg-paper-50 text-paper-900 dark:bg-paper-900 dark:text-paper-50 font-serif rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.25)] w-full max-w-[720px] max-h-[calc(100vh-4rem)] overflow-y-auto animate-[scaleIn_0.2s_ease] max-md:rounded-b-none max-md:max-w-none max-md:max-h-[92vh] max-md:animate-[slideUp_0.3s_ease] flex flex-col"
+  >
     <header
       class="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800"
     >
@@ -521,5 +536,6 @@
         {/if}
       {/if}
     </div>
+    </div>
   </div>
-</dialog>
+{/if}
