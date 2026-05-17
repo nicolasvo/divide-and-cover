@@ -106,7 +106,7 @@
     }
     if (!done) return fail('no result from server');
 
-    app.status = { stage: 'loading', percent: 0, message: 'decoding tracks…' };
+    app.status = { stage: 'loading', percent: 0, message: 'downloading tracks…' };
     await loadPlayer(done.job_id, done.name, done.stems);
     refreshLibrary();
   }

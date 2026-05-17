@@ -155,7 +155,7 @@ async function runSeparation(makeRequest) {
   }
   if (!done) return fail('no result from server');
 
-  setStatus({ stage: 'loading', percent: 100, message: 'decoding tracks...' });
+  setStatus({ stage: 'loading', percent: 100, message: 'downloading tracks...' });
   await loadPlayer(done);
   refreshLibrary();
 }
@@ -167,7 +167,7 @@ const STAGE_LABELS = {
   download: 'downloading model',
   separate: 'separating tracks',
   saving: 'saving tracks',
-  loading: 'decoding tracks',
+  loading: 'downloading tracks',
 };
 
 function setStatus({ stage, percent, message }) {

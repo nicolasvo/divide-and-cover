@@ -25,7 +25,7 @@ export const STAGE_LABELS: Record<string, string> = {
   download: 'downloading model',
   separate: 'separating tracks',
   saving: 'saving tracks',
-  loading: 'decoding tracks'
+  loading: 'downloading tracks'
 };
 
 export function labelStage(stage: string): string {
