@@ -44,6 +44,40 @@
   let offset = $state(0);
   let syncing = $state(false);
 
+  // Per-track toggle for auto-sync. Off = render synced lyrics as static text
+  // (e.g. live recordings where lrclib's timestamps don't apply). Persisted
+  // per-jobId in localStorage so the choice sticks across reloads.
+  let syncEnabled = $state(true);
+  function loadSyncPref(jobId: string): boolean {
+    try {
+      const v = localStorage.getItem(`lyrics-sync:${jobId}`);
+      return v === null ? true : v === '1';
+    } catch {
+      return true;
+    }
+  }
+  function saveSyncPref(jobId: string, on: boolean) {
+    try {
+      localStorage.setItem(`lyrics-sync:${jobId}`, on ? '1' : '0');
+    } catch {}
+  }
+  function toggleSyncEnabled() {
+    if (!app.currentTrack) return;
+    syncEnabled = !syncEnabled;
+    saveSyncPref(app.currentTrack.jobId, syncEnabled);
+    if (!syncEnabled) {
+      // Turning sync off mid-playback: stop following but leave the user's
+      // current scroll position alone. activeIdx is cleared so re-enabling
+      // sync forces a fresh scroll back to the current line.
+      syncing = false;
+      userScrolled = false;
+      followBtnVisible = false;
+      activeIdx = -1;
+    } else {
+      updateActive(app.player.currentTime);
+    }
+  }
+
   // Mirrors `_clean_lyric_query` in app/main.py so the user sees the same
   // string the backend will send to lrclib while the fetch is in flight.
   const LRC_NOISE_RE =
@@ -83,8 +117,10 @@
       followBtnVisible = false;
       offset = 0;
       syncing = false;
+      syncEnabled = true;
       return;
     }
+    syncEnabled = loadSyncPref(tr.jobId);
     void loadLyrics(tr.jobId, tr.name);
   });
 
@@ -103,7 +139,7 @@
     if (!contentEl) return;
     let rafId: number | null = null;
     const ro = new ResizeObserver(() => {
-      if (userScrolled) return;
+      if (userScrolled || !syncEnabled) return;
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         rafId = null;
@@ -173,7 +209,7 @@
   }
 
   function updateActive(t: number) {
-    if (!lyrics.hasSynced || !lyrics.lines.length) return;
+    if (!lyrics.hasSynced || !lyrics.lines.length || !syncEnabled) return;
     // playback time `t` maps back to a raw line index by subtracting offset:
     // a line at raw_t is "active" when t >= raw_t + offset  ⇔  raw_t <= t - offset
     const adjusted = t - offset;
@@ -209,13 +245,13 @@
       scrollActiveIntoView();
       return;
     }
-    if (!app.player.playing || !lyrics.hasSynced) return;
+    if (!app.player.playing || !lyrics.hasSynced || !syncEnabled) return;
     userScrolled = true;
     updateFollowVisibility();
   }
 
   function updateFollowVisibility() {
-    followBtnVisible = !!(userScrolled && app.player.playing && lyrics.hasSynced);
+    followBtnVisible = !!(userScrolled && app.player.playing && lyrics.hasSynced && syncEnabled);
   }
 
   function onWheel() {
@@ -226,6 +262,21 @@
   }
 
   function onLineClick(line: LyricLine) {
+    if (!syncEnabled && app.currentTrack) {
+      // Clicking a line while sync is toggled off re-enables sync and jumps
+      // playback to that line — same seek behavior as a normal click in
+      // synced mode. We do NOT touch the offset here: capturing offset is
+      // reserved for the dedicated sync button.
+      syncEnabled = true;
+      syncing = false;
+      userScrolled = false;
+      activeIdx = -1;
+      saveSyncPref(app.currentTrack.jobId, true);
+      engine.seekTo(line.t + offset);
+      if (!app.player.playing) engine.play();
+      updateActive(app.player.currentTime);
+      return;
+    }
     if (syncing && app.currentTrack) {
       // user says "this line is what I'm hearing right now" — capture the gap
       // between playback and the line's raw timestamp, persist, exit sync mode
@@ -282,11 +333,29 @@
   class="order-3 relative flex flex-col flex-1 min-h-0 mt-4 lg:mt-0 lg:h-[calc(100vh-12rem)] lg:min-w-0 lg:sticky lg:top-6 lg:self-start"
 >
   <div class="flex-none flex items-start justify-between mb-3">
-    <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
+    <div class="flex items-center gap-2">
+      <h3 class="text-xs uppercase tracking-[0.2em] text-stone-500">lyrics</h3>
+      {#if lyrics.hasSynced}
+        <button
+          type="button"
+          title={syncEnabled
+            ? 'auto-sync on — click to show all lyrics statically (e.g. live versions)'
+            : 'auto-sync off — click to follow playback'}
+          aria-label={syncEnabled ? 'disable lyrics auto-sync' : 'enable lyrics auto-sync'}
+          aria-pressed={syncEnabled}
+          onclick={toggleSyncEnabled}
+          class="w-7 h-7 -my-1 rounded-full transition flex items-center justify-center {syncEnabled
+            ? 'text-claude bg-claude/10'
+            : 'text-stone-500 hover:text-claude'}"
+        >
+          <span class="material-symbols-outlined" style="font-size:18px">steps</span>
+        </button>
+      {/if}
+    </div>
     {#if app.currentTrack}
       <div class="flex flex-col items-end gap-0.5">
         <div class="flex items-center gap-1">
-          {#if app.player.playing && lyrics.hasSynced}
+          {#if app.player.playing && lyrics.hasSynced && syncEnabled}
             <button
               type="button"
               title={syncing
@@ -312,7 +381,7 @@
             <span class="material-symbols-outlined" style="font-size:18px">search</span>
           </button>
         </div>
-        {#if offset !== 0 && lyrics.hasSynced}
+        {#if offset !== 0 && lyrics.hasSynced && syncEnabled}
           <p
             class="text-xs font-mono tabular-nums text-stone-500 dark:text-stone-400"
             title="lyrics offset relative to playback"
@@ -403,7 +472,7 @@
           <li class="lyric-line lyric-plain text-stone-500 dark:text-stone-400">
             ♪ instrumental ♪
           </li>
-        {:else if lyrics.hasSynced}
+        {:else if lyrics.hasSynced && syncEnabled}
           {#each lyrics.lines as ln, i (i)}
             <li
               class="lyric-line {!ln.text ? 'gap' : ''} {i === activeIdx
@@ -411,6 +480,23 @@
                 : i < activeIdx
                   ? 'passed'
                   : ''}"
+              onclick={() => onLineClick(ln)}
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onLineClick(ln);
+                }
+              }}
+            >
+              {ln.text ?? ''}
+            </li>
+          {/each}
+        {:else if lyrics.hasSynced}
+          {#each lyrics.lines as ln, i (i)}
+            <li
+              class="lyric-line unsynced {!ln.text ? 'gap' : ''}"
               onclick={() => onLineClick(ln)}
               role="button"
               tabindex="0"

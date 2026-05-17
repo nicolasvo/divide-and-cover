@@ -200,6 +200,24 @@ body.no-scroll {
   color: inherit;
   transform: none;
 }
+/* Sync toggled off: show synced lines as static, manually-scrolled text,
+ * pinned at the hover color so the whole song stays readable. Lines are still
+ * clickable — clicking one re-enables sync and treats that line as the current
+ * playback position. */
+.lyric-line.unsynced {
+  cursor: pointer;
+  color: rgba(120, 113, 108, 0.95);
+  transform: none;
+}
+.dark .lyric-line.unsynced {
+  color: rgba(231, 229, 228, 0.85);
+}
+@media (hover: hover) {
+  .lyric-line.unsynced:hover {
+    color: #d97757;
+    transform: none;
+  }
+}
 
 @keyframes spin {
   to {
