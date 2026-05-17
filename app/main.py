@@ -268,6 +268,8 @@ async def search(q: str, limit: int = 10, offset: int = 0) -> dict:
             "extract_flat": "in_playlist",
             "default_search": f"ytsearch{total * 2}",
         }
+        if proxy := os.getenv("YT_DLP_PROXY"):
+            opts["proxy"] = proxy
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(q, download=False) or {}
 
@@ -302,21 +304,25 @@ async def video_info(video_id: str) -> dict:
     if not VIDEO_ID_RE.match(video_id):
         raise HTTPException(400, "bad video id")
 
-    def do_lookup() -> dict | None:
+    def do_lookup() -> tuple[dict | None, str | None]:
         from yt_dlp import YoutubeDL
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        if proxy := os.getenv("YT_DLP_PROXY"):
+            opts["proxy"] = proxy
         try:
             with YoutubeDL(opts) as ydl:
                 return ydl.extract_info(
                     f"https://www.youtube.com/watch?v={video_id}",
                     download=False,
-                )
-        except Exception:
-            return None
+                ), None
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+            print(f"[yt-dlp lookup] {video_id} failed: {err}", flush=True)
+            return None, err
 
-    info = await asyncio.get_event_loop().run_in_executor(None, do_lookup)
+    info, err = await asyncio.get_event_loop().run_in_executor(None, do_lookup)
     if not info or not info.get("id"):
-        raise HTTPException(404, "video not found")
+        raise HTTPException(404, f"video not found: {err}" if err else "video not found")
 
     vid = info["id"]
     return {
