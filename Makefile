@@ -121,14 +121,12 @@ include .env
 
 .PHONY: tunnel-start
 tunnel-start:
-	@ps aux | grep -q "[s]sh.*1080" && echo "Tunnel already running" || \
-		ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-		-D 0.0.0.0:1080 -f -N $(SSH_PROXY_USER)@$(SSH_PROXY_HOST)
+	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -D 0.0.0.0:1080 -f -N pi@100.99.37.26
 
 .PHONY: tunnel-stop
 tunnel-stop:
-	@pkill -f "ssh.*1080" || true
+	-killall ssh 2>/dev/null || true
 
 .PHONY: tunnel-status
 tunnel-status:
-	@ps aux | grep "ssh.*1080" | grep -v grep || echo "Tunnel not running"
+	@ps aux | grep "[s]sh.*-D.*1080" || echo "Tunnel not running"
