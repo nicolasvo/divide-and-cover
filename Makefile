@@ -38,10 +38,12 @@ help:
 	@echo "  make caddy-down   stop Caddy"
 	@echo "  make caddy-logs   tail Caddy logs"
 	@echo ""
-	@echo "SSH tunnel (for yt-dlp proxy):"
-	@echo "  make tunnel-start   start the SSH tunnel to Raspberry Pi"
-	@echo "  make tunnel-stop    stop the SSH tunnel"
-	@echo "  make tunnel-status  check if tunnel is running"
+	@echo "SSH tunnel (for yt-dlp proxy — managed by systemd unit 'dac-tunnel'):"
+	@echo "  make tunnel-install install/refresh the dac-tunnel systemd unit (run on prod box)"
+	@echo "  make tunnel-ensure  ensure tunnel is alive (auto-runs as part of 'make prod')"
+	@echo "  make tunnel-start   start the dac-tunnel systemd service"
+	@echo "  make tunnel-stop    stop the dac-tunnel systemd service"
+	@echo "  make tunnel-status  show dac-tunnel status"
 	@echo ""
 	@echo "Other:"
 	@echo "  make modal-deploy   deploy the Modal serverless function from modal_app.py"
@@ -80,15 +82,15 @@ build-frontend:
 # --- production ---------------------------------------------------------
 
 .PHONY: prod
-prod: build-frontend tunnel-start caddy-up
+prod: build-frontend tunnel-ensure caddy-up
 	docker compose -f $(PROD_COMPOSE) up -d --build api
 
 .PHONY: prod-restart
-prod-restart: tunnel-start
+prod-restart: tunnel-ensure
 	docker compose -f $(PROD_COMPOSE) up -d --build api
 
 .PHONY: prod-down
-prod-down: tunnel-stop
+prod-down:
 	docker compose -f $(PROD_COMPOSE) down
 
 .PHONY: prod-logs
@@ -119,14 +121,35 @@ modal-deploy:
 
 include .env
 
+.PHONY: tunnel-install
+tunnel-install:
+	sudo ./scripts/install-tunnel-service.sh
+
+# Idempotent health check: installs the unit if missing, starts it if down,
+# does nothing (and needs no sudo) if it's already active.
+.PHONY: tunnel-ensure
+tunnel-ensure:
+	@if systemctl is-active --quiet dac-tunnel; then \
+	  echo "tunnel: active"; \
+	elif systemctl list-unit-files dac-tunnel.service >/dev/null 2>&1 \
+	     && systemctl cat dac-tunnel.service >/dev/null 2>&1; then \
+	  echo "tunnel: installed but not running — starting"; \
+	  sudo systemctl start dac-tunnel; \
+	  sudo systemctl is-active --quiet dac-tunnel && echo "tunnel: active" \
+	    || { echo "tunnel: failed to start — check 'journalctl -u dac-tunnel'"; exit 1; }; \
+	else \
+	  echo "tunnel: unit not installed — running installer"; \
+	  sudo ./scripts/install-tunnel-service.sh; \
+	fi
+
 .PHONY: tunnel-start
 tunnel-start:
-	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -D 0.0.0.0:1080 -f -N pi@100.99.37.26
+	sudo systemctl start dac-tunnel
 
 .PHONY: tunnel-stop
 tunnel-stop:
-	-killall ssh 2>/dev/null || true
+	-sudo systemctl stop dac-tunnel
 
 .PHONY: tunnel-status
 tunnel-status:
-	@ps aux | grep "[s]sh.*-D.*1080" || echo "Tunnel not running"
+	@systemctl --no-pager --full status dac-tunnel || true
