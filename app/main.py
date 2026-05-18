@@ -273,7 +273,10 @@ async def search(q: str, limit: int = 10, offset: int = 0) -> dict:
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(q, download=False) or {}
 
-    info = await asyncio.get_event_loop().run_in_executor(None, do_search)
+    try:
+        info = await asyncio.get_event_loop().run_in_executor(None, do_search)
+    except Exception as e:
+        raise
     entries = [e for e in info.get("entries", []) if e]
     entries = [
         e for e in entries

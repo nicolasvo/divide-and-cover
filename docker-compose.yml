@@ -1,15 +1,29 @@
 services:
+  tunnel:
+    image: alpine:latest
+    container_name: divide-and-cover-tunnel
+    restart: always
+    command: >
+      sh -c "
+      apk add --no-cache openssh-client &&
+      while true; do
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -D 0.0.0.0:1080 pi@100.99.37.26 || sleep 5
+      done
+      "
+    volumes:
+      - ${HOME}/.ssh:/root/.ssh:ro
+    networks:
+      - caddy-net
+
   api:
     build: .
     container_name: divide-and-cover-api
     restart: unless-stopped
     env_file: .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       DAC_USE_MODAL: "1"
       DAC_TRACKS_DIR: /data/tracks
-      YT_DLP_PROXY: socks5://host.docker.internal:1080
+      YT_DLP_PROXY: socks5://tunnel:1080
     volumes:
       - dac_tracks:/data/tracks
     networks:
