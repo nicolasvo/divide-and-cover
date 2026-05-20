@@ -192,13 +192,20 @@ body.no-scroll {
 }
 .lyric-plain {
   cursor: default;
-  font-size: 0.98rem;
-  font-weight: 500;
-  line-height: 1.55;
-}
-.lyric-plain:hover {
-  color: inherit;
+  color: rgba(120, 113, 108, 0.95);
   transform: none;
+}
+.dark .lyric-plain {
+  color: rgba(231, 229, 228, 0.85);
+}
+@media (hover: hover) {
+  .lyric-plain:hover {
+    color: rgba(120, 113, 108, 0.95);
+    transform: none;
+  }
+  .dark .lyric-plain:hover {
+    color: rgba(231, 229, 228, 0.85);
+  }
 }
 /* Sync toggled off: show synced lines as static, manually-scrolled text,
  * pinned at the hover color so the whole song stays readable. Lines are still

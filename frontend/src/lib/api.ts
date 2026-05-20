@@ -162,6 +162,23 @@ export async function selectLyrics(jobId: string, lrclibId: number): Promise<Lyr
   return r.json();
 }
 
+export async function pasteLyrics(jobId: string, text: string): Promise<LyricsResult> {
+  const r = await fetch(`/api/lyrics/${jobId}/paste`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function getSavedPaste(jobId: string): Promise<string | null> {
+  const r = await fetch(`/api/lyrics/${jobId}/paste`);
+  if (!r.ok) return null;
+  const data = await r.json();
+  return typeof data.text === 'string' ? data.text : null;
+}
+
 export async function saveLyricsOffset(jobId: string, offset: number): Promise<void> {
   const r = await fetch(`/api/lyrics/${jobId}/offset`, {
     method: 'POST',

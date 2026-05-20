@@ -3,6 +3,8 @@
   import {
     fetchLyrics,
     selectLyrics,
+    pasteLyrics,
+    getSavedPaste,
     saveLyricsOffset,
     type LyricsResult,
     type LyricsSearchHit
@@ -322,6 +324,15 @@
     applyLyrics(data, app.currentTrack.name);
   }
 
+  async function onPasteLyricsSubmit(text: string) {
+    if (!app.currentTrack) return;
+    const jobId = app.currentTrack.jobId;
+    const data = await pasteLyrics(jobId, text);
+    if (app.currentTrack?.jobId !== jobId) return;
+    dialogOpen = false;
+    applyLyrics(data, app.currentTrack.name);
+  }
+
   const showLoading = $derived(loading);
   const showNone = $derived(!loading && !!app.currentTrack && !lyrics.found);
   const showContent = $derived(!loading && lyrics.found);
@@ -552,4 +563,7 @@
   currentId={lyrics.id}
   onClose={() => (dialogOpen = false)}
   onPick={onPickLyrics}
+  onPaste={onPasteLyricsSubmit}
+  loadSavedPaste={async () =>
+    app.currentTrack ? await getSavedPaste(app.currentTrack.jobId) : null}
 />

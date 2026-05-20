@@ -757,6 +757,62 @@ async def lyrics_select(job_id: str, payload: LyricsSelect) -> dict:
     return result
 
 
+class LyricsPaste(BaseModel):
+    text: str
+
+
+@app.post("/api/lyrics/{job_id}/paste")
+async def lyrics_paste(job_id: str, payload: LyricsPaste) -> dict:
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "track not found")
+    body = (payload.text or "").strip()
+    if not body:
+        raise HTTPException(400, "empty")
+    lines = _parse_lrc(body)
+    plain = "" if lines else body
+    meta_file = d / "meta.json"
+    name = ""
+    if meta_file.exists():
+        try:
+            name = json.loads(meta_file.read_text()).get("name", "")
+        except json.JSONDecodeError:
+            pass
+    # Stash the raw paste in its own file so it survives the user switching
+    # back to an lrclib match (which overwrites lyrics.json). The dialog
+    # re-seeds the textarea from this on next open.
+    (d / "paste.lrc").write_text(body)
+    result = {
+        "found": True,
+        "id": None,
+        "title": name,
+        "artist": "",
+        "album": None,
+        "duration": None,
+        "instrumental": False,
+        "lines": lines,
+        "plain": plain,
+        "query": "paste",
+        "source": "paste",
+    }
+    (d / "lyrics.json").write_text(json.dumps(result))
+    return result
+
+
+@app.get("/api/lyrics/{job_id}/paste")
+async def lyrics_paste_get(job_id: str) -> dict:
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "track not found")
+    f = d / "paste.lrc"
+    if not f.exists():
+        return {"text": None}
+    try:
+        return {"text": f.read_text()}
+    except OSError:
+        return {"text": None}
+
+
 class LyricsOffset(BaseModel):
     offset: float
 

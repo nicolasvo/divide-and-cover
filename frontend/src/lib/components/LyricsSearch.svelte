@@ -11,26 +11,39 @@
     currentId: number | null;
     onClose: () => void;
     onPick: (hit: LyricsSearchHit) => void;
+    onPaste: (text: string) => Promise<void>;
+    loadSavedPaste: () => Promise<string | null>;
   };
-  let { open, seed, trackDuration, currentId, onClose, onPick }: Props = $props();
+  let { open, seed, trackDuration, currentId, onClose, onPick, onPaste, loadSavedPaste }: Props = $props();
 
   const DUR_TOL = 0.5;
 
+  let mode = $state<'search' | 'paste'>('search');
   let q = $state(''); // live input value
   let activeQuery = $state(''); // last submitted query — gates the "no results" message
   let results = $state<LyricsSearchHit[]>([]);
   let loading = $state(false);
   let errMsg = $state('');
+  let pasteText = $state('');
+  let pasting = $state(false);
+  let pasteErr = $state('');
+  let pasteSeedLoading = $state(false);
   let inputEl: HTMLInputElement | null = $state(null);
   let backdropEl: HTMLDivElement | null = $state(null);
   let panelEl: HTMLDivElement | null = $state(null);
 
+  const pasteHasTimestamps = $derived(/^\s*\[\d{1,2}:\d{2}/m.test(pasteText));
+
   $effect(() => {
     if (open) {
+      mode = 'search';
       q = seed;
       activeQuery = '';
       results = [];
       errMsg = '';
+      pasteText = '';
+      pasteErr = '';
+      pasting = false;
       // Auto-focus only on desktop — on mobile, focusing pops up the soft
       // keyboard. Let the user tap the input themselves.
       if (window.matchMedia('(min-width: 768px)').matches) {
@@ -62,6 +75,43 @@
       results = [];
     } finally {
       loading = false;
+    }
+  }
+
+  async function submitPaste(e: Event) {
+    e.preventDefault();
+    const text = pasteText.trim();
+    if (!text || pasting) return;
+    pasting = true;
+    pasteErr = '';
+    try {
+      await onPaste(text);
+    } catch (err) {
+      pasteErr = String(err).slice(0, 200);
+    } finally {
+      pasting = false;
+    }
+  }
+
+  async function toggleMode() {
+    const next = mode === 'paste' ? 'search' : 'paste';
+    mode = next;
+    pasteErr = '';
+    if (next === 'paste') {
+      // Re-seed the textarea from any previously-saved paste for this track,
+      // so switching back to lrclib doesn't lose the user's manual edits.
+      pasteText = '';
+      pasteSeedLoading = true;
+      try {
+        const saved = await loadSavedPaste();
+        if (mode === 'paste' && saved) pasteText = saved;
+      } catch {
+        /* ignore — empty textarea is a fine fallback */
+      } finally {
+        pasteSeedLoading = false;
+      }
+    } else {
+      pasteText = '';
     }
   }
 
@@ -115,18 +165,31 @@
         class="md:hidden mx-auto mb-3 h-1.5 w-9 rounded-full bg-stone-300 dark:bg-stone-700"
       ></div>
       <div class="flex items-center justify-between">
-        <h2 class="text-xl italic">search lyrics</h2>
-        <button
-          type="button"
-          aria-label="close"
-          onclick={onClose}
-          class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center"
-        >
-          <span class="material-symbols-outlined" style="font-size:20px">close</span>
-        </button>
+        <h2 class="text-xl italic">{mode === 'paste' ? 'paste lyrics' : 'search lyrics'}</h2>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label={mode === 'paste' ? 'search instead' : 'paste lyrics'}
+            onclick={toggleMode}
+            class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center"
+          >
+            <span class="material-symbols-outlined" style="font-size:20px">
+              {mode === 'paste' ? 'search' : 'add_notes'}
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="close"
+            onclick={onClose}
+            class="w-9 h-9 rounded-full border border-stone-300 dark:border-stone-700 hover:border-claude hover:text-claude transition flex items-center justify-center"
+          >
+            <span class="material-symbols-outlined" style="font-size:20px">close</span>
+          </button>
+        </div>
       </div>
     </header>
 
+    {#if mode === 'search'}
     <form onsubmit={submit} class="flex gap-2 px-5 py-4">
       <input
         bind:this={inputEl}
@@ -209,6 +272,36 @@
         <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">no results</p>
       {/if}
     </div>
+    {/if}
+
+    {#if mode === 'paste'}
+    <form onsubmit={submitPaste} class="flex flex-col gap-3 px-5 py-4">
+      <textarea
+        bind:value={pasteText}
+        placeholder={'paste lyrics here\n\nwith timestamps for sync:\n[00:12.34]first line\n[00:15.80]second line\n\nor plain text'}
+        rows="12"
+        class="w-full px-4 py-3 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-paper-800 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-claude transition font-mono text-sm resize-none"
+      ></textarea>
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-stone-500 dark:text-stone-400 italic">
+          {pasteText.trim()
+            ? pasteHasTimestamps
+              ? 'synced — lines will follow playback'
+              : 'plain text — no sync'
+            : ''}
+        </p>
+        <button
+          type="submit"
+          disabled={!pasteText.trim() || pasting}
+          class="h-11 px-4 rounded-lg bg-claude hover:bg-claude-300 text-paper-50 flex items-center gap-2 transition shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <span class="material-symbols-outlined" style="font-size:20px">check</span>
+          save
+        </button>
+      </div>
+      {#if pasteErr}<p class="text-sm text-red-400">{pasteErr}</p>{/if}
+    </form>
+    {/if}
     </div>
   </div>
 {/if}

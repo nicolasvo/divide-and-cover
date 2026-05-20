@@ -21,7 +21,8 @@ include .env
 help:
 	@echo "Dev (one command — brings up backend AND frontend containers):"
 	@echo "  make dev-modal    backend + frontend in containers; demucs on Modal GPU (DAC_USE_MODAL=1)"
-	@echo "  make dev-local    backend + frontend in containers; demucs runs locally inside container (CPU, slow)"
+	@echo "  make dev-local    bring api up detached (no rebuild) + recreate frontend container"
+	@echo "  make dev-local-build   backend + frontend rebuild
 	@echo "  make dev-down     stop the dev stack"
 	@echo "  make dev-logs     tail dev logs (both services)"
 	@echo ""
@@ -52,9 +53,14 @@ sync-prod:
 dev-modal:
 	DAC_USE_MODAL=1 docker compose -f $(DEV_COMPOSE) up --build
 
+.PHONY: dev-local-build
+dev-local-build:
+	DAC_USE_MODAL=0 docker compose -f $(DEV_COMPOSE) up --build
+
 .PHONY: dev-local
 dev-local:
-	DAC_USE_MODAL=0 docker compose -f $(DEV_COMPOSE) up --build
+	docker compose -f $(DEV_COMPOSE) up -d api
+	docker compose -f $(DEV_COMPOSE) up --force-recreate frontend
 
 .PHONY: dev-down
 dev-down:
