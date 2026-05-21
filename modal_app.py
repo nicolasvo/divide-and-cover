@@ -1,21 +1,14 @@
 """
 Modal deployment for the demucs separator.
 
-Strategy: fan out the htdemucs_ft bag (4 fine-tuned sub-models) across
-4 parallel Modal containers. Each worker runs apply_model on one
-sub-model with shifts=2 and overlap=0.5. The orchestrator weight-
-averages the 4 outputs using bag.weights and encodes the stems to MP3.
-
-This is ~4x faster than the serial CLI path that runs all 4 sub-models
-back-to-back, at roughly flat GPU-second cost.
-
-Deploy:
+Deploy once:
     uv run --env-file .env modal deploy modal_app.py
 
-The FastAPI server in `app/main.py` calls `divide-and-cover/separate`,
-which is a generator yielding {"event": "progress"|"stage"|"done", ...}.
+The FastAPI server in `app/main.py` then calls the named function
+`divide-and-cover/separate` over the network for each split. It is a
+generator: yields {"event": "progress", ...} as demucs reports stdout,
+then a final {"event": "done", "stems": {...}}.
 """
-import io
 import modal
 
 image = (
@@ -23,118 +16,86 @@ image = (
     .apt_install("ffmpeg")
     .pip_install("demucs>=4.0.1")
     .run_commands(
-        # pre-cache the 4 htdemucs_ft checkpoints (~320 MB total) so cold
-        # starts skip the download
-        "python -c \"from demucs.pretrained import get_model; get_model('htdemucs_ft')\""
+        # pre-cache htdemucs weights into the image so the first cold start
+        # doesn't pay the ~80 MB model download
+        "python -c \"from demucs.pretrained import get_model; get_model('htdemucs')\""
     )
 )
 
 app = modal.App("divide-and-cover", image=image)
 
-MODEL = "htdemucs_ft"
-N_MODELS = 4
+STEMS = ("vocals", "drums", "bass", "other")
+MODEL = "htdemucs"
 
 
-def _decode_audio(audio: bytes, suffix: str, samplerate: int, channels: int):
-    """demucs's AudioFile takes a filesystem path, so write to a tempfile."""
-    import tempfile
-    from pathlib import Path
-    from demucs.audio import AudioFile
-
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-        f.write(audio)
-        path = Path(f.name)
-    try:
-        return AudioFile(path).read(streams=0, samplerate=samplerate, channels=channels)
-    finally:
-        path.unlink(missing_ok=True)
-
-
-@app.function(gpu="T4", timeout=900)
-def apply_one_model(audio: bytes, suffix: str, model_idx: int) -> tuple[int, bytes]:
-    """Run one sub-model of htdemucs_ft on the audio.
-
-    Returns (model_idx, tensor_bytes) so the orchestrator can weight-average
-    without depending on map ordering. The tensor is (n_sources, channels, T)
-    serialized as float16 to halve transfer size.
-    """
-    import torch
-    from demucs.apply import apply_model
-    from demucs.pretrained import get_model
-
-    bag = get_model(MODEL)
-    sub_model = bag.models[model_idx].to("cuda").eval()
-
-    wav = _decode_audio(audio, suffix, bag.samplerate, bag.audio_channels)
-    # Standard demucs normalization (matches demucs.separate CLI).
-    ref = wav.mean(0)
-    wav_norm = (wav - ref.mean()) / ref.std()
-
-    with torch.no_grad():
-        sources = apply_model(
-            sub_model,
-            wav_norm[None],
-            device="cuda",
-            shifts=2,
-            overlap=0.5,
-            split=True,
-            progress=False,
-        )[0]
-    sources = sources * ref.std() + ref.mean()
-
-    buf = io.BytesIO()
-    torch.save(sources.to(torch.float16).cpu(), buf)
-    return model_idx, buf.getvalue()
-
-
-@app.function(timeout=1800)
+@app.function(
+    gpu="T4",
+    timeout=600,
+    scaledown_window=60,
+)
 def separate(audio: bytes, suffix: str = ".wav"):
-    """Orchestrator: fan out across the 4 sub-models, average, encode."""
+    """Run demucs on `audio` bytes, streaming progress events.
+
+    Yields:
+        {"event": "progress", "stage": "separate", "percent": int}
+        {"event": "done", "stems": {stem_name: mp3_bytes}}
+    """
+    import re
+    import subprocess
+    import sys
     import tempfile
     from pathlib import Path
-    import torch
-    from demucs.audio import save_audio
-    from demucs.pretrained import get_model
 
-    yield {"event": "stage", "stage": "starting", "message": "fanning out across 4 gpus…"}
+    pct_re = re.compile(rb"(\d+)%\|")
 
-    # Loaded for metadata only (weights, sources, samplerate); no GPU needed.
-    bag = get_model(MODEL)
-    weights = torch.tensor(bag.weights, dtype=torch.float32)
-    sources_names = list(bag.sources)
-    samplerate = bag.samplerate
+    with tempfile.TemporaryDirectory() as work_str:
+        work = Path(work_str)
+        src = work / f"input{suffix}"
+        src.write_bytes(audio)
+        out = work / "out"
+        out.mkdir()
 
-    accumulated = None
-    weight_sums = torch.zeros(len(sources_names), dtype=torch.float32)
-    done_count = 0
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "-m", "demucs",
+             "--mp3", "--mp3-bitrate", "192",
+             "-n", MODEL, "-o", str(out), str(src)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+            env={"PYTHONUNBUFFERED": "1"},
+        )
 
-    args = [(audio, suffix, i) for i in range(N_MODELS)]
-    for model_idx, tensor_bytes in apply_one_model.starmap(args):
-        sources = torch.load(io.BytesIO(tensor_bytes), weights_only=True).to(torch.float32)
-        if accumulated is None:
-            accumulated = torch.zeros_like(sources)
-        for s in range(sources.shape[0]):
-            accumulated[s] += sources[s] * weights[model_idx, s]
-            weight_sums[s] += weights[model_idx, s]
-        done_count += 1
-        yield {"event": "progress", "stage": "separate", "percent": done_count * 25}
+        stage = "separate"  # demucs weights are pre-cached, so we go straight here
+        last_pct = -1
+        buf = b""
+        assert proc.stdout is not None
+        try:
+            while True:
+                chunk = proc.stdout.read(512)
+                if not chunk:
+                    break
+                buf += chunk
+                while True:
+                    cuts = [j for j in (buf.find(b"\r"), buf.find(b"\n")) if j != -1]
+                    if not cuts:
+                        break
+                    i = min(cuts)
+                    line, buf = buf[:i], buf[i + 1:]
+                    if not line:
+                        continue
+                    m = pct_re.search(line)
+                    if m:
+                        pct = int(m.group(1))
+                        if pct != last_pct:
+                            last_pct = pct
+                            yield {"event": "progress", "stage": stage, "percent": pct}
+        finally:
+            rc = proc.wait()
 
-    for s in range(accumulated.shape[0]):
-        accumulated[s] /= weight_sums[s]
+        if rc != 0:
+            tail = buf.decode(errors="replace")[-500:]
+            raise RuntimeError(f"demucs failed (rc={rc}): {tail}")
 
-    yield {"event": "stage", "stage": "saving", "message": "encoding stems…"}
-
-    stems = {}
-    with tempfile.TemporaryDirectory() as work:
-        for s_idx, name in enumerate(sources_names):
-            out_path = Path(work) / f"{name}.mp3"
-            save_audio(
-                accumulated[s_idx],
-                str(out_path),
-                samplerate=samplerate,
-                bitrate=192,
-                clip="rescale",
-            )
-            stems[name] = out_path.read_bytes()
-
-    yield {"event": "done", "stems": stems}
+        produced = out / MODEL / src.stem
+        stems = {s: (produced / f"{s}.mp3").read_bytes() for s in STEMS}
+        yield {"event": "done", "stems": stems}
