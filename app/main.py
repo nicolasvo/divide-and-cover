@@ -102,7 +102,7 @@ async def _stream_separation_modal(src: Path, job_id: str, name: str, extra_meta
     audio_bytes = src.read_bytes()
     suffix = src.suffix or ".wav"
 
-    yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on modal…"})
+    yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on gpu…"})
 
     stems: dict | None = None
     try:
