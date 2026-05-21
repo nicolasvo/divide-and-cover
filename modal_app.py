@@ -4,14 +4,10 @@ Modal deployment for the demucs separator.
 Deploy once:
     uv run --env-file .env modal deploy modal_app.py
 
-The FastAPI server in `app/main.py` calls the named function
-`divide-and-cover/separate` over the network. It is a generator:
-yields {"event": "progress", ...} as demucs reports stdout, then a
-final {"event": "done", "stems": {...}}.
-
-Uses the htdemucs_ft model (fine-tuned 4-model bag) with --shifts 2 and
---overlap 0.5 for highest-quality separation; ~4-5x slower than vanilla
-htdemucs but noticeably cleaner.
+The FastAPI server in `app/main.py` then calls the named function
+`divide-and-cover/separate` over the network for each split. It is a
+generator: yields {"event": "progress", ...} as demucs reports stdout,
+then a final {"event": "done", "stems": {...}}.
 """
 import modal
 
@@ -20,21 +16,21 @@ image = (
     .apt_install("ffmpeg")
     .pip_install("demucs>=4.0.1")
     .run_commands(
-        # pre-cache htdemucs_ft (bag of 4 models, ~320 MB) so cold starts
-        # don't pay the download
-        "python -c \"from demucs.pretrained import get_model; get_model('htdemucs_ft')\""
+        # pre-cache htdemucs weights into the image so the first cold start
+        # doesn't pay the ~80 MB model download
+        "python -c \"from demucs.pretrained import get_model; get_model('htdemucs')\""
     )
 )
 
 app = modal.App("divide-and-cover", image=image)
 
 STEMS = ("vocals", "drums", "bass", "other")
-MODEL = "htdemucs_ft"
+MODEL = "htdemucs"
 
 
 @app.function(
     gpu="T4",
-    timeout=1800,
+    timeout=600,
     scaledown_window=60,
 )
 def separate(audio: bytes, suffix: str = ".wav"):
@@ -62,9 +58,7 @@ def separate(audio: bytes, suffix: str = ".wav"):
         proc = subprocess.Popen(
             [sys.executable, "-u", "-m", "demucs",
              "--mp3", "--mp3-bitrate", "192",
-             "-n", MODEL,
-             "--shifts", "2", "--overlap", "0.5",
-             "-o", str(out), str(src)],
+             "-n", MODEL, "-o", str(out), str(src)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=0,

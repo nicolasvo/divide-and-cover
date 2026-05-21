@@ -3,10 +3,7 @@ services:
     build:
       context: .
       args:
-        # Default 0 = slim image (Modal-only path, no torch/demucs).
-        # The Makefile's `dev-local*` targets export INSTALL_DEV=1 to get the
-        # local-subprocess demucs path; `dev-modal` leaves it unset.
-        INSTALL_DEV: "${INSTALL_DEV:-0}"
+        INSTALL_DEV: "1"
     container_name: dac-api-dev
     ports:
       - "127.0.0.1:8000:8000"

@@ -22,7 +22,7 @@ TRACKS = Path(os.environ.get("DAC_TRACKS_DIR", str(ROOT.parent / "tracks")))
 TRACKS.mkdir(parents=True, exist_ok=True)
 
 STEMS = ("vocals", "drums", "bass", "other")
-MODEL = "htdemucs_ft"
+MODEL = "htdemucs"
 
 DEMUCS_PCT_RE = re.compile(rb"(\d+)%\|")
 YT_PCT_RE = re.compile(rb"(\d+(?:\.\d+)?)%")
@@ -102,7 +102,7 @@ async def _stream_separation_modal(src: Path, job_id: str, name: str, extra_meta
     audio_bytes = src.read_bytes()
     suffix = src.suffix or ".wav"
 
-    yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on gpu…"})
+    yield _ndjson({"event": "stage", "stage": "separate", "message": "separating on modal…"})
 
     stems: dict | None = None
     try:
@@ -141,7 +141,6 @@ async def _stream_separation_local(src: Path, work_out: Path, job_id: str, name:
         sys.executable, "-u", "-m", "demucs",
         "--mp3", "--mp3-bitrate", "192",
         "-n", MODEL,
-        "--shifts", "2", "--overlap", "0.5",
         "-o", str(work_out),
         str(src),
     ]

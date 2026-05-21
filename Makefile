@@ -55,12 +55,12 @@ dev-modal:
 
 .PHONY: dev-local-build
 dev-local-build:
-	DAC_USE_MODAL=0 INSTALL_DEV=1 docker compose -f $(DEV_COMPOSE) up --build
+	DAC_USE_MODAL=0 docker compose -f $(DEV_COMPOSE) up --build
 
 .PHONY: dev-local
 dev-local:
-	INSTALL_DEV=1 docker compose -f $(DEV_COMPOSE) up -d api
-	INSTALL_DEV=1 docker compose -f $(DEV_COMPOSE) up --force-recreate frontend
+	docker compose -f $(DEV_COMPOSE) up -d api
+	docker compose -f $(DEV_COMPOSE) up --force-recreate frontend
 
 .PHONY: dev-down
 dev-down:
