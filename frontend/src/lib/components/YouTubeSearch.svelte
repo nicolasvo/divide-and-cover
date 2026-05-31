@@ -90,6 +90,8 @@
       if (window.matchMedia('(min-width: 768px)').matches) {
         setTimeout(() => inputEl?.focus(), 0);
       }
+    } else {
+      stopPreview();
     }
   });
 
@@ -263,15 +265,100 @@
 
   const ytTotalShown = $derived(ytSplit.libReplacements.length + ytSplit.fresh.length);
 
+  // --- youtube audio preview (hidden YT IFrame player) ---------------------
+  // Plays a result's audio in a 0-size YouTube player so the user can hear a
+  // track before splitting it. Only one preview plays at a time.
+
+  let previewId = $state<string | null>(null);
+  let ytPlayer: any = null;
+  let ytPlayerReady = false;
+  let pendingPreviewId: string | null = null;
+
+  function ensureYtApi() {
+    if (typeof window === 'undefined') return;
+    const w = window as any;
+    if (w.YT?.Player) {
+      initPreviewPlayer();
+      return;
+    }
+    if (!document.getElementById('yt-iframe-api')) {
+      const tag = document.createElement('script');
+      tag.id = 'yt-iframe-api';
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+    }
+    // chain onto any existing ready-callback rather than clobbering it
+    const prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      prev?.();
+      initPreviewPlayer();
+    };
+  }
+
+  function initPreviewPlayer() {
+    const w = window as any;
+    if (ytPlayer || !w.YT?.Player) return;
+    ytPlayer = new w.YT.Player('yt-preview-player', {
+      height: '0',
+      width: '0',
+      playerVars: { playsinline: 1 },
+      events: {
+        onReady: () => {
+          ytPlayerReady = true;
+          if (pendingPreviewId) {
+            playPreview(pendingPreviewId);
+            pendingPreviewId = null;
+          }
+        },
+        // YT.PlayerState.ENDED === 0
+        onStateChange: (e: any) => {
+          if (e.data === 0) previewId = null;
+        }
+      }
+    });
+  }
+
+  function playPreview(id: string) {
+    previewId = id;
+    ytPlayer?.loadVideoById?.(id);
+  }
+
+  function togglePreview(id: string) {
+    if (previewId === id) {
+      stopPreview();
+      return;
+    }
+    ensureYtApi();
+    if (ytPlayer && ytPlayerReady) {
+      playPreview(id);
+    } else {
+      // player still booting — record intent and show the stop state meanwhile
+      pendingPreviewId = id;
+      previewId = id;
+    }
+  }
+
+  function stopPreview() {
+    previewId = null;
+    pendingPreviewId = null;
+    try {
+      ytPlayer?.stopVideo?.();
+    } catch {
+      /* player not ready */
+    }
+  }
+
   // --- actions --------------------------------------------------------------
 
   function pickLibrary(t: Track) {
     confirming = null;
+    stopPreview();
     onClose();
     onLoadLibrary(t.job_id, t.name);
   }
 
   function pickYT(r: YTHit) {
+    stopPreview();
     onClose();
     onPickYouTube(r.id, r.title);
   }
@@ -553,7 +640,7 @@
               </li>
             {/each}
             {#each ytSplit.fresh as r (r.id)}
-              <li class="min-w-0 flex gap-2 items-center">
+              <li class="relative min-w-0 flex gap-2 items-center">
                 <button
                   onclick={() => pickYT(r)}
                   class="flex-1 min-w-0 flex gap-3 p-2 bg-white dark:bg-paper-800 border border-stone-200 dark:border-stone-800 rounded-lg hover:border-claude/60 cursor-pointer transition group text-left"
@@ -577,12 +664,32 @@
                     </p>
                   </div>
                 </button>
+                <!-- preview play/stop overlaid on the thumbnail (sibling of the
+                     pick button so we don't nest interactive elements) -->
+                <div
+                  class="pointer-events-none absolute left-2 top-2 w-32 aspect-video flex items-center justify-center"
+                >
+                  <button
+                    type="button"
+                    title={previewId === r.id ? 'stop preview' : 'preview'}
+                    aria-label={previewId === r.id ? 'stop preview' : 'preview'}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      togglePreview(r.id);
+                    }}
+                    class="pointer-events-auto h-10 w-10 flex items-center justify-center rounded-full border-2 border-white bg-claude/80 text-white shadow-md hover:bg-claude active:scale-95 transition"
+                  >
+                    <span class="material-symbols-outlined" style="font-size:24px"
+                      >{previewId === r.id ? 'stop' : 'play_arrow'}</span
+                    >
+                  </button>
+                </div>
                 <a
                   href={r.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title="preview on youtube"
-                  aria-label="preview on youtube"
+                  title="open on youtube"
+                  aria-label="open on youtube"
                   class="shrink-0 h-11 w-11 flex items-center justify-center rounded-lg border border-stone-200 dark:border-stone-800 text-stone-500 hover:text-claude hover:border-claude/60 transition"
                 >
                   <span class="material-symbols-outlined" style="font-size:22px">open_in_new</span>
@@ -617,3 +724,9 @@
     </div>
   </div>
 {/if}
+
+<!-- hidden audio-only player for youtube previews; persists across open/close
+     so the YT IFrame instance survives reopening the dialog -->
+<div aria-hidden="true" class="fixed -left-[9999px] top-0 h-0 w-0 overflow-hidden">
+  <div id="yt-preview-player"></div>
+</div>
