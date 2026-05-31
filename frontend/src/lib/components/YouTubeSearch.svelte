@@ -1,6 +1,7 @@
 <script lang="ts">
   import { app } from '$lib/state.svelte';
-  import { fmtTime, fmtDate } from '$lib/format';
+  import { jobs } from '$lib/jobs.svelte';
+  import { fmtTime, fmtDate, labelStage } from '$lib/format';
   import {
     ytSearch,
     fetchVideoInfo,
@@ -81,6 +82,8 @@
       // tracks (possibly from another tab / device) show up without needing
       // a page reload.
       void onRefresh();
+      // ...and re-sync in-flight jobs so the processing section is current.
+      void jobs.discover();
       // Auto-focus only on desktop — on mobile, focusing pops up the soft
       // keyboard, which covers half the sheet. Let the user tap the input
       // themselves when they actually want to type.
@@ -222,8 +225,12 @@
   const trimmedQ = $derived(q.trim().toLowerCase());
 
   const filteredLibrary = $derived.by(() => {
-    if (!trimmedQ) return app.tracks;
-    return app.tracks.filter((t) => (t.name || '').toLowerCase().includes(trimmedQ));
+    // hide tracks still being processed — they're shown in the processing
+    // section above until the job finishes (avoids a brief duplicate).
+    const running = new Set(jobs.active.map((j) => j.id));
+    const base = app.tracks.filter((t) => !running.has(t.job_id));
+    if (!trimmedQ) return base;
+    return base.filter((t) => (t.name || '').toLowerCase().includes(trimmedQ));
   });
 
   // --- youtube-mode data (shown after a search has been submitted) --------
@@ -387,10 +394,58 @@
     <div class="flex-1 overflow-y-auto px-5 pb-5">
       {#if !activeQuery}
         <!-- ============ LIBRARY MODE ============ -->
+        {#if jobs.active.length > 0}
+          <!-- ---- in-progress (detached jobs still running) ---- -->
+          <h4
+            class="text-xs uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400 mb-2"
+          >
+            in progress
+          </h4>
+          <ul class="grid gap-2 list-none p-0">
+            {#each jobs.active as j (j.id)}
+              {@const pct = Math.max(0, Math.min(100, Math.floor(j.percent)))}
+              <li class="min-w-0 overflow-hidden px-3 py-2 bg-white dark:bg-paper-800 rounded-lg">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span
+                    class="material-symbols-outlined shrink-0 text-claude"
+                    style="font-size:18px;animation:spin 1.2s linear infinite">progress_activity</span
+                  >
+                  <span class="min-w-0 flex-1 truncate" title={j.name}>{j.name}</span>
+                  <span class="hidden md:inline text-xs text-stone-500 dark:text-stone-400 shrink-0"
+                    >{labelStage(j.stage)}</span
+                  >
+                  <span class="text-xs text-stone-500 tabular-nums font-mono shrink-0"
+                    >{j.percent > 0 ? `${pct}%` : ''}</span
+                  >
+                  <button
+                    class="px-1 py-0.5 text-stone-400 hover:text-red-500 transition shrink-0 leading-none"
+                    title="cancel"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      void jobs.cancel(j.id);
+                    }}
+                  >
+                    <span class="material-symbols-outlined" style="font-size:18px">close</span>
+                  </button>
+                </div>
+                <div class="mt-2 h-1.5 rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
+                  <div
+                    class="h-full bg-claude transition-[width] duration-150 ease-linear"
+                    style:width="{pct}%"
+                  ></div>
+                </div>
+              </li>
+            {/each}
+          </ul>
+          <!-- short gray rule dividing in-progress jobs from the library -->
+          <hr class="my-3 border-0 h-px bg-stone-300 dark:bg-stone-700" />
+        {/if}
         {#if filteredLibrary.length === 0}
-          <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">
-            {app.tracks.length === 0 ? 'no tracks yet' : 'type a song name and press enter'}
-          </p>
+          {#if jobs.active.length === 0}
+            <p class="mt-3 text-sm text-stone-500 dark:text-stone-400 italic text-center">
+              {app.tracks.length === 0 ? 'no tracks yet' : 'type a song name and press enter'}
+            </p>
+          {/if}
         {:else}
           <ul class="grid gap-2 list-none p-0">
             {#each filteredLibrary as t (t.job_id)}

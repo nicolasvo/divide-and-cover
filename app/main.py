@@ -17,6 +17,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
+from . import jobs
+
 ROOT = Path(__file__).parent
 TRACKS = Path(os.environ.get("DAC_TRACKS_DIR", str(ROOT.parent / "tracks")))
 TRACKS.mkdir(parents=True, exist_ok=True)
@@ -226,7 +228,11 @@ async def _stream_separation(src: Path, work_out: Path, job_id: str, name: str, 
 # --- file upload + separate ------------------------------------------------
 
 @app.post("/api/separate")
-async def separate(file: UploadFile = File(...)):
+async def separate(file: UploadFile = File(...)) -> dict:
+    """Kick off a detached separation job and return its id immediately.
+
+    Progress is observed via GET /api/jobs/{id}/events — the job keeps running
+    server-side regardless of whether any client is connected."""
     job_id = uuid.uuid4().hex[:12]
     suffix = Path(file.filename or "song").suffix.lower() or ".wav"
     name = Path(file.filename or "song").stem
@@ -238,14 +244,13 @@ async def separate(file: UploadFile = File(...)):
     out = work / "out"
     out.mkdir()
 
-    async def event_stream():
-        try:
-            async for chunk in _stream_separation(src, out, job_id, name):
-                yield chunk
-        finally:
-            shutil.rmtree(work, ignore_errors=True)
-
-    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+    job = jobs.create(job_id, name, kind="upload")
+    jobs.spawn(
+        job,
+        _stream_separation(src, out, job_id, name),
+        cleanup=lambda: shutil.rmtree(work, ignore_errors=True),
+    )
+    return {"job_id": job_id}
 
 
 # --- youtube search + download + separate ---------------------------------
@@ -343,8 +348,95 @@ class YoutubeJob(BaseModel):
     name: str | None = None
 
 
+async def _youtube_pipeline(video_id: str, name: str, work: Path, out: Path, job_id: str) -> AsyncIterator[bytes]:
+    """Download a youtube video's audio then separate it. Yields ndjson events."""
+    yield _ndjson({"event": "stage", "stage": "downloading_audio", "message": f"downloading {video_id}…"})
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    cmd = [
+        sys.executable, "-u", "-m", "yt_dlp",
+        "-x", "--audio-format", "mp3",
+        "-o", str(work / "input.%(ext)s"),
+        "--no-playlist",
+        "--newline",
+        "--verbose",
+    ]
+    if proxy := os.getenv("YT_DLP_PROXY"):
+        cmd.extend(["--proxy", proxy])
+    cmd.append(url)
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    last_logs: list[str] = []
+    try:
+        last_pct = -1
+        buf = b""
+        assert proc.stdout is not None
+        while True:
+            chunk = await proc.stdout.read(512)
+            if not chunk:
+                break
+            buf += chunk
+            while True:
+                cuts = [j for j in (buf.find(b"\r"), buf.find(b"\n")) if j != -1]
+                if not cuts:
+                    break
+                i = min(cuts)
+                line, buf = buf[:i], buf[i + 1:]
+                if not line:
+                    continue
+                text = line.decode(errors="replace").strip()
+                if not text:
+                    continue
+                last_logs.append(text)
+                if len(last_logs) > 20:
+                    last_logs.pop(0)
+                if text.startswith("[download]"):
+                    m = YT_PCT_RE.search(line)
+                    if m:
+                        pct = int(float(m.group(1)))
+                        if pct != last_pct:
+                            last_pct = pct
+                            yield _ndjson({
+                                "event": "progress",
+                                "stage": "downloading_audio",
+                                "percent": pct,
+                            })
+                        continue
+                if len(text) < 240:
+                    yield _ndjson({
+                        "event": "log",
+                        "stage": "downloading_audio",
+                        "message": text,
+                    })
+
+        rc = await proc.wait()
+    finally:
+        if proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                proc.kill()
+
+    if rc != 0:
+        error_detail = "\n".join(last_logs[-5:]) if last_logs else f"exit code {rc}"
+        yield _ndjson({"event": "error", "message": f"yt-dlp failed: {error_detail}"})
+        return
+
+    downloaded = next((p for p in work.iterdir() if p.is_file() and p.name.startswith("input.")), None)
+    if downloaded is None:
+        yield _ndjson({"event": "error", "message": "audio file not produced"})
+        return
+
+    async for chunk in _stream_separation(downloaded, out, job_id, name, extra_meta={"video_id": video_id}):
+        yield chunk
+
+
 @app.post("/api/separate-youtube")
-async def separate_youtube(payload: YoutubeJob):
+async def separate_youtube(payload: YoutubeJob) -> dict:
     if not VIDEO_ID_RE.match(payload.video_id):
         raise HTTPException(400, "bad video id")
     video_id = payload.video_id
@@ -352,9 +444,8 @@ async def separate_youtube(payload: YoutubeJob):
 
     existing = _find_track_by_video_id(video_id)
     if existing:
-        async def already_have():
-            yield _done_event(existing["job_id"], existing["name"])
-        return StreamingResponse(already_have(), media_type="application/x-ndjson")
+        # already separated — no job, the client loads it straight from the library
+        return {"job_id": existing["job_id"], "name": existing["name"], "existing": True}
 
     job_id = uuid.uuid4().hex[:12]
 
@@ -362,95 +453,46 @@ async def separate_youtube(payload: YoutubeJob):
     out = work / "out"
     out.mkdir()
 
-    async def event_stream():
-        try:
-            yield _ndjson({"event": "stage", "stage": "downloading_audio", "message": f"downloading {video_id}…"})
+    job = jobs.create(job_id, name, kind="youtube", video_id=video_id)
+    job.stage = "downloading_audio"
+    jobs.spawn(
+        job,
+        _youtube_pipeline(video_id, name, work, out, job_id),
+        cleanup=lambda: shutil.rmtree(work, ignore_errors=True),
+    )
+    return {"job_id": job_id}
 
-            url = f"https://www.youtube.com/watch?v={video_id}"
-            cmd = [
-                sys.executable, "-u", "-m", "yt_dlp",
-                "-x", "--audio-format", "mp3",
-                "-o", str(work / "input.%(ext)s"),
-                "--no-playlist",
-                "--newline",
-                "--verbose",
-            ]
-            if proxy := os.getenv("YT_DLP_PROXY"):
-                cmd.extend(["--proxy", proxy])
-            cmd.append(url)
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            last_logs: list[str] = []
-            try:
-                last_pct = -1
-                buf = b""
-                assert proc.stdout is not None
-                while True:
-                    chunk = await proc.stdout.read(512)
-                    if not chunk:
-                        break
-                    buf += chunk
-                    while True:
-                        cuts = [j for j in (buf.find(b"\r"), buf.find(b"\n")) if j != -1]
-                        if not cuts:
-                            break
-                        i = min(cuts)
-                        line, buf = buf[:i], buf[i + 1:]
-                        if not line:
-                            continue
-                        text = line.decode(errors="replace").strip()
-                        if not text:
-                            continue
-                        last_logs.append(text)
-                        if len(last_logs) > 20:
-                            last_logs.pop(0)
-                        if text.startswith("[download]"):
-                            m = YT_PCT_RE.search(line)
-                            if m:
-                                pct = int(float(m.group(1)))
-                                if pct != last_pct:
-                                    last_pct = pct
-                                    yield _ndjson({
-                                        "event": "progress",
-                                        "stage": "downloading_audio",
-                                        "percent": pct,
-                                    })
-                                continue
-                        if len(text) < 240:
-                            yield _ndjson({
-                                "event": "log",
-                                "stage": "downloading_audio",
-                                "message": text,
-                            })
 
-                rc = await proc.wait()
-            finally:
-                if proc.returncode is None:
-                    proc.terminate()
-                    try:
-                        await asyncio.wait_for(proc.wait(), timeout=5)
-                    except asyncio.TimeoutError:
-                        proc.kill()
+# --- job progress (detached separation) ------------------------------------
 
-            if rc != 0:
-                error_detail = "\n".join(last_logs[-5:]) if last_logs else f"exit code {rc}"
-                yield _ndjson({"event": "error", "message": f"yt-dlp failed: {error_detail}"})
-                return
+@app.get("/api/jobs")
+def list_jobs() -> dict:
+    """Running + recently-finished jobs — lets a (re)loading client discover work."""
+    return {"jobs": jobs.list_active()}
 
-            downloaded = next((p for p in work.iterdir() if p.is_file() and p.name.startswith("input.")), None)
-            if downloaded is None:
-                yield _ndjson({"event": "error", "message": "audio file not produced"})
-                return
 
-            async for chunk in _stream_separation(downloaded, out, job_id, name, extra_meta={"video_id": video_id}):
-                yield chunk
-        finally:
-            shutil.rmtree(work, ignore_errors=True)
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    """Interrupt an in-progress job."""
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "unknown job")
+    jobs.cancel(job)
+    return {"ok": True}
 
-    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str):
+    """Subscribe to a job's progress. Emits a catch-up snapshot, then live events."""
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "unknown job")
+
+    async def stream():
+        async for evt in jobs.events(job):
+            yield _ndjson(evt)
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 # --- library / stems --------------------------------------------------------

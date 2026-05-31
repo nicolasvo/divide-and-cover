@@ -3,12 +3,11 @@
   import { engine, app, STEMS, type Stem } from '$lib/state.svelte';
   import {
     listTracks,
-    readNdjson,
-    separateFile,
-    separateYouTube,
-    stemUrlsFor,
-    type StreamEvent
+    createSeparateFile,
+    createSeparateYouTube,
+    stemUrlsFor
   } from '$lib/api';
+  import { jobs, type JobProgress } from '$lib/jobs.svelte';
 
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import DropZone from '$lib/components/DropZone.svelte';
@@ -57,7 +56,26 @@
     syncUrlToCurrentTrack();
   });
 
+  // Reconnect to server-side jobs whenever the tab becomes visible again
+  // (covers mobile tab suspension dropping the progress stream). A plain
+  // $effect, not async onMount — async onMount can't return a teardown.
+  $effect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void jobs.discover();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  });
+
   onMount(async () => {
+    // pick up any jobs already running server-side (e.g. started before a
+    // reload, or in another tab) and reconnect to their progress streams
+    jobs.onComplete = onJobComplete;
+    void jobs.discover();
+
+    // DEV: `?fakejob` seeds a fake job stuck at 50% for tweaking the UI.
+    if (new URLSearchParams(window.location.search).has('fakejob')) jobs.seedFake();
+
     await refreshLibrary();
     const params = new URLSearchParams(window.location.search);
     const initialId = params.get(TRACK_PARAM);
@@ -72,43 +90,30 @@
     syncUrlToCurrentTrack();
   });
 
-  // --- upload + youtube separation flow (NDJSON streaming) ------------------
+  // --- detached separation jobs --------------------------------------------
+  //
+  // Jobs run server-side and are tracked in the `jobs` store; progress for the
+  // focused job is mirrored into `app.status` by the store. We only react to
+  // completion here.
 
-  async function runSeparation(makeRequest: () => Promise<Response>) {
-    let res: Response;
-    try {
-      res = await makeRequest();
-    } catch (e) {
-      return fail(`request failed: ${e}`);
+  function onJobComplete(job: JobProgress) {
+    // "watching" = this is the job the user kicked off and is still parked on
+    // its progress screen. Any other finish (a concurrent background job, or
+    // one they've navigated away from) is just marked ready in the library.
+    const watching = jobs.focusedId === job.id && app.view === 'status';
+    if (job.status === 'error') {
+      if (watching) fail(job.error ?? 'failed');
+      jobs.forget(job.id);
+      return;
     }
-    if (!res.ok || !res.body) {
-      const err = await res.text();
-      return fail(`split failed: ${err.slice(0, 400)}`);
-    }
-
-    let done: Extract<StreamEvent, { event: 'done' }> | null = null;
-    try {
-      for await (const evt of readNdjson(res)) {
-        if (evt.event === 'progress') {
-          app.status = { stage: evt.stage, percent: evt.percent, message: app.status.message };
-        } else if (evt.event === 'stage') {
-          app.status = { stage: evt.stage, percent: 0, message: evt.message ?? '' };
-        } else if (evt.event === 'log') {
-          app.status = { stage: evt.stage, percent: app.status.percent, message: evt.message };
-        } else if (evt.event === 'error') {
-          return fail(evt.message);
-        } else if (evt.event === 'done') {
-          done = evt;
-        }
-      }
-    } catch (e) {
-      return fail(`stream error: ${e}`);
-    }
-    if (!done) return fail('no result from server');
-
-    app.status = { stage: 'loading', percent: 0, message: 'downloading tracks…' };
-    await loadPlayer(done.job_id, done.name, done.stems);
+    // done — refresh so it shows in the library ("ready"); only load into the
+    // player if the user is actively watching this job's progress.
     refreshLibrary();
+    if (watching && job.stems) {
+      app.status = { stage: 'loading', percent: 0, message: 'downloading tracks…' };
+      void loadPlayer(job.id, job.name, job.stems);
+    }
+    jobs.forget(job.id);
   }
 
   async function loadPlayer(
@@ -148,14 +153,30 @@
     clearActiveTrack();
     app.view = 'status';
     app.status = { stage: 'uploading', percent: 0, message: file.name };
-    await runSeparation(() => separateFile(file));
+    const name = file.name.replace(/\.[^/.]+$/, '');
+    try {
+      const { job_id } = await createSeparateFile(file);
+      jobs.start(job_id, name, { focus: true });
+    } catch (e) {
+      fail(`request failed: ${e}`);
+    }
   }
 
   async function onYoutubePick(videoId: string, title: string) {
     clearActiveTrack();
     app.view = 'status';
     app.status = { stage: 'downloading_audio', percent: 0, message: title };
-    await runSeparation(() => separateYouTube(videoId, title));
+    try {
+      const res = await createSeparateYouTube(videoId, title);
+      if (res.existing) {
+        // already in the library — load it directly, no job
+        await loadFromLibrary(res.job_id, res.name ?? title);
+        return;
+      }
+      jobs.start(res.job_id, title, { focus: true, videoId });
+    } catch (e) {
+      fail(`request failed: ${e}`);
+    }
   }
 
   async function loadFromLibrary(jobId: string, name: string) {

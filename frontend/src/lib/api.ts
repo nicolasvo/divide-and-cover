@@ -16,6 +16,21 @@ export type Track = {
   video_id?: string | null;
 };
 
+/** A detached separation job as reported by the backend registry. */
+export type JobSnapshot = {
+  id: string;
+  name: string;
+  kind: 'upload' | 'youtube';
+  video_id?: string | null;
+  status: 'running' | 'done' | 'error';
+  stage: string;
+  percent: number;
+  message: string;
+  stems: Record<Stem, string> | null;
+  error?: string | null;
+  created_at: number;
+};
+
 export type YTHit = {
   id: string;
   title: string;
@@ -101,18 +116,45 @@ export async function renameTrack(jobId: string, name: string): Promise<{ name: 
   return res.json();
 }
 
-export function separateFile(file: File): Promise<Response> {
+/** Kick off a detached upload separation. Returns the job id to subscribe to. */
+export async function createSeparateFile(file: File): Promise<{ job_id: string }> {
   const fd = new FormData();
   fd.append('file', file);
-  return fetch('/api/separate', { method: 'POST', body: fd });
+  const r = await fetch('/api/separate', { method: 'POST', body: fd });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
 }
 
-export function separateYouTube(videoId: string, name?: string): Promise<Response> {
-  return fetch('/api/separate-youtube', {
+/** Kick off a detached youtube separation. `existing` => already in the library. */
+export async function createSeparateYouTube(
+  videoId: string,
+  name?: string
+): Promise<{ job_id: string; name?: string; existing?: boolean }> {
+  const r = await fetch('/api/separate-youtube', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ video_id: videoId, name: name ?? null })
   });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function listJobs(): Promise<JobSnapshot[]> {
+  const r = await fetch('/api/jobs');
+  if (!r.ok) throw new Error(`listJobs: ${r.status}`);
+  const data = await r.json();
+  return data.jobs ?? [];
+}
+
+/** Open a progress subscription for a job. Caller drives it with readNdjson(). */
+export function jobEvents(jobId: string, signal?: AbortSignal): Promise<Response> {
+  return fetch(`/api/jobs/${jobId}/events`, { signal });
+}
+
+/** Interrupt an in-progress job. */
+export async function cancelJob(jobId: string): Promise<void> {
+  const r = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+  if (!r.ok) throw new Error(`cancelJob: ${r.status}`);
 }
 
 export async function ytSearch(

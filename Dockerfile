@@ -29,4 +29,6 @@ EXPOSE 8000
 
 # --no-sync: trust the venv built above; don't let `uv run` reinstall the dev
 # group at container startup (it would re-pull torch + cuda otherwise)
-CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# single worker: the detached-job registry (app/jobs.py) lives in process
+# memory, so progress subscriptions must hit the same worker that owns the job.
+CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
