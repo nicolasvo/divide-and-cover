@@ -16,6 +16,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from . import jobs
 
@@ -559,6 +560,67 @@ def get_stem(job_id: str, stem: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "stem missing")
     return FileResponse(path, media_type="audio/mpeg")
+
+
+def _safe_filename(name: str) -> str:
+    """Strip characters that don't belong in a download filename."""
+    name = re.sub(r"[^\w\s().+-]", "", name).strip()
+    return name or "track"
+
+
+@app.get("/api/mix/{job_id}")
+def mix_stems(job_id: str, stems: str) -> FileResponse:
+    """Mix the selected stems down to a single mp3 and serve it as a download.
+
+    `stems` is a comma-separated subset of STEMS. Stems are summed (amix with
+    normalize=0) to match the in-app player, which sums stems at unity gain.
+    """
+    d = _track_dir(job_id)
+    if not d.exists():
+        raise HTTPException(404, "not found")
+
+    wanted = [s for s in stems.split(",") if s]
+    if not wanted or any(s not in STEMS for s in wanted) or len(set(wanted)) != len(wanted):
+        raise HTTPException(400, "bad stems")
+    sel = [s for s in STEMS if s in wanted]  # canonical order
+
+    paths = [d / f"{s}.mp3" for s in sel]
+    for p in paths:
+        if not p.exists():
+            raise HTTPException(404, "stem missing")
+
+    try:
+        base = json.loads((d / "meta.json").read_text()).get("name", job_id)
+    except (FileNotFoundError, json.JSONDecodeError):
+        base = job_id
+    label = "full" if len(sel) == len(STEMS) else "+".join(sel)
+    fname = _safe_filename(f"{base} ({label})") + ".mp3"
+
+    # single stem: no mixing needed, stream the file straight through
+    if len(paths) == 1:
+        return FileResponse(paths[0], media_type="audio/mpeg", filename=fname)
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="dac-mix-"))
+    out = tmp_dir / "mix.mp3"
+    cmd = ["ffmpeg", "-y"]
+    for p in paths:
+        cmd += ["-i", str(p)]
+    cmd += [
+        "-filter_complex", f"amix=inputs={len(paths)}:normalize=0",
+        "-c:a", "libmp3lame", "-q:a", "2",
+        str(out),
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0 or not out.exists():
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(500, "mix failed")
+
+    return FileResponse(
+        out,
+        media_type="audio/mpeg",
+        filename=fname,
+        background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
+    )
 
 
 # --- lyrics (lrclib) -------------------------------------------------------

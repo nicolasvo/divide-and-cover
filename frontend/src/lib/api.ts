@@ -94,6 +94,12 @@ export function stemUrlsFor(jobId: string): Record<Stem, string> {
   return out;
 }
 
+/** URL that mixes the given stems into a single downloadable mp3. */
+export function mixUrl(jobId: string, stems: Stem[]): string {
+  const params = new URLSearchParams({ stems: stems.join(',') });
+  return `/api/mix/${jobId}?${params}`;
+}
+
 export async function listTracks(): Promise<Track[]> {
   const res = await fetch('/api/tracks');
   if (!res.ok) throw new Error(`listTracks: ${res.status}`);

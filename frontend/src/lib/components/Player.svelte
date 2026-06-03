@@ -4,6 +4,9 @@
   import { fmtTime } from '$lib/format';
   import { renameTrack } from '$lib/api';
   import StemControls from './StemControls.svelte';
+  import DownloadDialog from './DownloadDialog.svelte';
+
+  let downloadOpen = $state(false);
 
   type Props = { onSelectAnother: () => void };
   let { onSelectAnother }: Props = $props();
@@ -218,11 +221,29 @@
   <div class="{expanded ? 'block' : 'hidden'} lg:block">
     <StemControls />
 
-    <button
-      onclick={onSelectAnother}
-      class="w-full px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2"
-    >
-      select another song
-    </button>
+    <div class="flex gap-2">
+      <button
+        onclick={onSelectAnother}
+        class="flex-1 px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2"
+      >
+        select another song
+      </button>
+      <button
+        onclick={() => (downloadOpen = true)}
+        aria-label="download tracks"
+        title="download tracks"
+        class="px-3 py-2.5 rounded-lg border border-claude/50 text-claude hover:bg-claude hover:text-paper-50 hover:border-claude transition text-sm font-medium flex items-center justify-center gap-2 shrink-0"
+      >
+        <span class="material-symbols-outlined" style="font-size:20px">download</span>
+      </button>
+    </div>
   </div>
 </section>
+
+{#if app.currentTrack}
+  <DownloadDialog
+    open={downloadOpen}
+    jobId={app.currentTrack.jobId}
+    onClose={() => (downloadOpen = false)}
+  />
+{/if}
