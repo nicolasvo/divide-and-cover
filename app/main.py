@@ -273,6 +273,9 @@ async def search(q: str, limit: int = 10, offset: int = 0) -> dict:
             "skip_download": True,
             "extract_flat": "in_playlist",
             "default_search": f"ytsearch{total * 2}",
+            # Options to bypass 403 errors
+            "nocheckcertificate": True,
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
         }
         if proxy := os.getenv("YT_DLP_PROXY"):
             opts["proxy"] = proxy
@@ -315,7 +318,14 @@ async def video_info(video_id: str) -> dict:
 
     def do_lookup() -> tuple[dict | None, str | None]:
         from yt_dlp import YoutubeDL
-        opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            # Options to bypass 403 errors
+            "nocheckcertificate": True,
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
+        }
         if proxy := os.getenv("YT_DLP_PROXY"):
             opts["proxy"] = proxy
         try:
@@ -361,6 +371,10 @@ async def _youtube_pipeline(video_id: str, name: str, work: Path, out: Path, job
         "--no-playlist",
         "--newline",
         "--verbose",
+        # Options to bypass 403 errors
+        "--no-check-certificates",
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "--extractor-args", "youtube:player_client=android",
     ]
     if proxy := os.getenv("YT_DLP_PROXY"):
         cmd.extend(["--proxy", proxy])
